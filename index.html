@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Ableton Style Pro Cutter (Turbo Smooth)</title>
+    <script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
+    <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/regions.min.js"></script>
+    <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/minimap.min.js"></script>
+    <style>
+        /* Ableton Live 经典暗黑皮肤配色 */
+        :root {
+            --bg-main: #202020;
+            --bg-panel: #2c2c2c;
+            --bg-control: #383838;
+            --bg-input: #1a1a1a;
+            --text-main: #b5b5b5;
+            --text-bright: #e5e5e5;
+            --ableton-orange: #ff5500;
+            --ableton-yellow: #fdff00;
+            --border-color: #1a1a1a;
+        }
+
+        body { 
+            font-family: 'Consolas', 'Helvetica Neue', Arial, sans-serif; 
+            background: var(--bg-main); 
+            color: var(--text-main); 
+            padding: 20px;
+            margin: 0;
+            font-size: 12px;
+            user-select: none;
+            overflow-x: hidden;
+        }
+
+        .container { 
+            max-width: 1100px; 
+            margin: 0 auto; 
+            background: var(--bg-panel); 
+            padding: 15px; 
+            border: 1px solid #444;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5); 
+        }
+
+        h2 {
+            font-size: 14px;
+            font-weight: normal;
+            color: var(--text-bright);
+            margin-top: 0;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* 工具栏 */
+        .toolbar { 
+            background: var(--bg-control);
+            padding: 6px 10px;
+            display: flex; 
+            gap: 12px; 
+            align-items: center; 
+            flex-wrap: wrap;
+            border: 1px solid var(--border-color);
+            margin-bottom: 10px;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .file-upload-btn {
+            display: inline-block;
+            padding: 5px 12px;
+            background: #444;
+            color: var(--text-bright);
+            border: 1px solid var(--border-color);
+            cursor: pointer;
+        }
+        .file-upload-btn:hover { background: #555; }
+        input[type="file"] { display: none; }
+
+        button { 
+            padding: 5px 12px; 
+            background: #444; 
+            color: var(--text-bright); 
+            border: 1px solid var(--border-color); 
+            border-radius: 0px; 
+            cursor: pointer; 
+            font-size: 12px;
+        }
+        button:hover { background: #555; }
+        button:disabled { color: #666; background: #333; cursor: not-allowed; }
+        
+        button.primary { background: var(--ableton-orange); color: #000; font-weight: bold; }
+        button.primary:hover { background: #ff661a; }
+        button.danger { background: #5a2c2c; color: #ff8888; }
+        button.danger:hover { background: #7a3c3c; }
+
+        /* 时间轴缩放 */
+        .zoom-controls { margin-left: auto; }
+        .zoom-controls button { padding: 2px 8px; font-size: 10px; }
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 120px; height: 4px; background: #1a1a1a; outline: none; cursor: pointer;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 12px; height: 12px; background: var(--ableton-yellow); border-radius: 6px;
+        }
+
+        /* 快捷键提示面板 */
+        .shortcut-guide {
+            background: #242424; border: 1px solid var(--border-color); padding: 6px 12px; margin-bottom: 10px; font-size: 11px; color: #888; display: flex; gap: 15px; flex-wrap: wrap;
+        }
+        .shortcut-guide span b { color: var(--ableton-yellow); font-weight: normal; }
+
+        /* 轨道大容器 */
+        .track-wrapper {
+            background: #1c1c1c;
+            border: 1px solid var(--border-color);
+            padding: 5px;
+            margin-bottom: 15px;
+        }
+
+        /* Ableton 式顶部 Overview 全景预览窗容器 */
+        #minimap-container {
+            position: relative;
+            width: 100%;
+            height: 38px;
+            margin-bottom: 4px;
+        }
+        #minimap {
+            width: 100%;
+            height: 100%;
+            background: #151515;
+            border-bottom: 2px solid #111;
+        }
+        #minimap-interact {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            cursor: crosshair;
+        }
+
+        /* 主波形轨 */
+        #waveform { 
+            width: 100%; 
+            height: 150px; 
+            background: #181818; 
+            overflow: hidden;
+            position: relative;
+        }
+        #waveform ::part(container) {
+            overflow-x: auto !important;
+            overflow-y: hidden !important;
+            scrollbar-width: none !important;
+            -ms-overflow-style: none !important;
+        }
+        #waveform ::part(container)::-webkit-scrollbar {
+            display: none !important;
+        }
+        #waveform > * {
+            overflow-x: auto !important;
+            overflow-y: hidden !important;
+            scrollbar-width: none !important;
+            -ms-overflow-style: none !important;
+        }
+        #waveform > *::-webkit-scrollbar {
+            display: none !important;
+        }
+
+        /* 表格样式 */
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; background: #242424; }
+        th, td { border: 1px solid var(--border-color); padding: 6px 10px; text-align: left; font-size: 12px; }
+        th { background: var(--bg-control); color: var(--text-bright); font-weight: normal; }
+        tr:nth-child(even) { background: #282828; }
+        tr.selected-row { background: #3c3c3c !important; border-left: 3px solid var(--ableton-orange); }
+
+        input[type="text"], input[type="number"] {
+            background: var(--bg-input); border: 1px solid #444; color: var(--text-bright); padding: 3px 6px; font-family: inherit; font-size: 12px; width: 90%; -moz-appearance: textfield;
+        }
+        input[type="text"]:focus, input[type="number"]:focus { border-color: var(--ableton-orange); outline: none; }
+        input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type="checkbox"] { accent-color: var(--ableton-orange); cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>
+        <span>Precise Live Audio Cutter (Arrangement View)</span>
+        <span style="font-size:11px; color:#666;">v1.4 Performance & Shortcut Turbo</span>
+    </h2>
+    
+    <div class="toolbar">
+        <div class="control-group">
+            <label class="file-upload-btn">
+                <input type="file" id="audio-upload" accept="audio/*" />
+                LOAD AUDIO
+            </label>
+            <button id="btn-play-pause" disabled>PLAY / PAUSE</button>
+            <button id="btn-undo" disabled>UNDO</button>
+        </div>
+
+        <div class="control-group zoom-controls">
+            <span>ZOOM</span>
+            <button id="btn-zoom-out">➖</button>
+            <input type="range" id="zoom-slider" min="10" max="1000" value="50" step="10">
+            <button id="btn-zoom-in">➕</button>
+        </div>
+    </div>
+
+    <div class="shortcut-guide">
+        <span>⌨️ COMMANDS:</span>
+        <span><b>Space</b> 播放/暂停</span>
+        <span><b>Ctrl + 滚轮上下</b> / <b>键盘 + - 键</b> 丝滑缩放时间轴</span>
+        <span><b>小窗口拖拽</b> 左右平移 / 上下缩放</span>
+        <span><b>Delete / Backspace</b> 删除选中片段</span>
+        <span><b>Ctrl + Z</b> 撤回操作</span>
+    </div>
+
+    <div class="track-wrapper">
+        <div id="minimap-container">
+            <div id="minimap"></div>
+            <div id="minimap-interact" title="拖拽左右移动，拖拽上下缩放"></div>
+        </div>
+        <div id="waveform"></div>
+    </div>
+
+    <div class="toolbar" style="background: #242424;">
+        <label style="color: var(--text-bright); cursor: pointer;">
+            <input type="checkbox" id="check-all" checked /> SELECT ALL
+        </label>
+        <button id="btn-export" class="primary">⬇️ EXPORT SELECTED CLIPS (WAV)</button>
+    </div>
+
+    <table id="segments-table">
+        <thead>
+            <tr>
+                <th style="width: 60px;">EXPORT</th>
+                <th>CLIP NAME</th>
+                <th style="width: 140px;">START (S)</th>
+                <th style="width: 140px;">END (S)</th>
+                <th style="width: 120px;">ACTIONS</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td colspan="5" style="text-align:center; color:#555; padding: 20px;">请先导入音频文件...</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<script>
+    const DEFAULT_ZOOM = 50; 
+    const MAX_ZOOM = 1000;
+    const MIN_ZOOM = 10;
+
+    let wavesurfer = null;
+    let wsRegions = null;
+    let wsMinimap = null;
+    let audioBuffer = null; 
+    let audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    let historyStack = []; 
+    let selectedRegionId = null; 
+    
+    const ui = {
+        upload: document.getElementById('audio-upload'),
+        playPause: document.getElementById('btn-play-pause'),
+        undo: document.getElementById('btn-undo'),
+        export: document.getElementById('btn-export'),
+        checkAll: document.getElementById('check-all'),
+        tbody: document.querySelector('#segments-table tbody'),
+        zoomSlider: document.getElementById('zoom-slider'),
+        zoomIn: document.getElementById('btn-zoom-in'),
+        zoomOut: document.getElementById('btn-zoom-out')
+    };
+
+    function initWavesurfer() {
+        if (wavesurfer) wavesurfer.destroy();
+        
+        wavesurfer = WaveSurfer.create({
+            container: '#waveform',
+            waveColor: '#4a4a4a', 
+            progressColor: '#ff5500', 
+            cursorColor: '#fdff00', 
+            cursorWidth: 1,
+            barWidth: 2,
+            barGap: 1,
+            height: 150,
+            minPxPerSec: DEFAULT_ZOOM
+        });
+
+        wsRegions = wavesurfer.registerPlugin(WaveSurfer.Regions.create());
+        wsRegions.enableDragSelection({ color: 'rgba(255, 85, 0, 0.25)' });
+
+        wsMinimap = wavesurfer.registerPlugin(WaveSurfer.Minimap.create({
+            container: '#minimap',
+            waveColor: '#333333',       
+            progressColor: '#444444',
+            height: 38,
+            overlayColor: 'rgba(255, 85, 0, 0.2)' 
+        }));
+
+        // 切片创建：首次生成整行表格
+        wsRegions.on('region-created', (region) => {
+            if (!region.data || !region.data.name) {
+                const count = wsRegions.getRegions().length;
+                region.data = { 
+                    name: 'Clip ' + String(count).padStart(2, '0'),
+                    checked: true 
+                };
+                recordHistory({ type: 'create', regionId: region.id, start: region.start, end: region.end, data: { ...region.data } });
+            }
+            selectedRegionId = region.id; 
+            renderTable();
+        });
+
+        // 🚀 性能大重构点 1：拖拽中禁止销毁重建 DOM，只做单点数字刷新，完全解除卡顿！
+        wsRegions.on('region-updated', (region) => {
+            updateRowInputsOnly(region);
+        });
+
+        // 🚀 性能大重构点 2：只有当鼠标松开（修改彻底结束）时，才排序重绘一次表格
+        wsRegions.on('region-update-end', () => {
+            renderTable();
+        });
+        
+        wsRegions.on('region-clicked', (region, e) => {
+            e.stopPropagation(); 
+            selectedRegionId = region.id;
+            renderTable();
+        });
+
+        wavesurfer.on('ready', () => {
+            ui.playPause.disabled = false;
+            ui.zoomSlider.value = wavesurfer.options.minPxPerSec;
+        });
+    }
+
+    // 接管鼠标滚轮事件实现 Ctrl + 滚轮无级缩放
+    window.addEventListener('wheel', (e) => {
+        if (e.ctrlKey) {
+            e.preventDefault(); 
+            if (!wavesurfer) return;
+
+            let currentZoom = wavesurfer.options.minPxPerSec;
+            let step = currentZoom < 100 ? 10 : (currentZoom < 400 ? 30 : 60);
+            let newZoom = e.deltaY < 0 ? (currentZoom + step) : (currentZoom - step);
+
+            handleZoomUpdate(newZoom);
+        }
+    }, { passive: false }); 
+
+    // 全局键盘快捷键接管
+    document.removeEventListener('keydown', handleGlobalShortcuts);
+    document.addEventListener('keydown', handleGlobalShortcuts);
+
+    function handleGlobalShortcuts(e) {
+        if (document.activeElement.tagName === 'INPUT') return; 
+
+        const regions = wsRegions ? wsRegions.getRegions() : [];
+
+        // 1. 空格键：播放/暂停
+        if (e.code === 'Space') {
+            e.preventDefault();
+            if (wavesurfer) wavesurfer.playPause();
+        }
+
+        // 2. Ctrl + Z：撤回
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+            e.preventDefault();
+            ui.undo.click();
+        }
+
+        // 3. Delete / Backspace：删除当前选中片段
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+            if (selectedRegionId) {
+                const targetRegion = regions.find(r => r.id === selectedRegionId);
+                if (targetRegion) {
+                    e.preventDefault();
+                    recordHistory({ type: 'delete', regionId: targetRegion.id, start: targetRegion.start, end: targetRegion.end, data: { ...targetRegion.data } });
+                    targetRegion.remove();
+                    selectedRegionId = null;
+                    renderTable();
+                }
+            }
+        }
+
+        // 4. 键盘修复：加号 / 等号 放大时间轴
+        if (e.key === '=' || e.key === '+') {
+            e.preventDefault();
+            if (wavesurfer) handleZoomUpdate(wavesurfer.options.minPxPerSec + 40);
+        }
+
+        // 5. 键盘修复：减号 缩小时间轴
+        if (e.key === '-') {
+            e.preventDefault();
+            if (wavesurfer) handleZoomUpdate(wavesurfer.options.minPxPerSec - 40);
+        }
+    }
+
+    // 文件导入
+    ui.upload.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        initWavesurfer();
+        ui.tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#888;">正在解析音频波形...</td></tr>';
+        historyStack = [];
+        selectedRegionId = null;
+        updateUndoButton();
+        ui.checkAll.checked = true;
+
+        const url = URL.createObjectURL(file);
+        wavesurfer.load(url);
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            const arrayBuffer = event.target.result;
+            audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        };
+        reader.readAsArrayBuffer(file);
+    });
+
+    ui.playPause.addEventListener('click', () => wavesurfer.playPause());
+
+    // 缩放核心函数
+    const handleZoomUpdate = (newZoom) => {
+        if (!wavesurfer) return;
+        newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
+        wavesurfer.zoom(newZoom);
+        ui.zoomSlider.value = newZoom;
+    };
+
+    ui.zoomSlider.addEventListener('input', (e) => handleZoomUpdate(parseInt(e.target.value)));
+    ui.zoomIn.addEventListener('click', () => wavesurfer && handleZoomUpdate(wavesurfer.options.minPxPerSec + 40));
+    ui.zoomOut.addEventListener('click', () => wavesurfer && handleZoomUpdate(wavesurfer.options.minPxPerSec - 40));
+
+    // Ableton 风格的 Minimap 交互逻辑：带有死区防误触的互斥轴控制
+    const interactLayer = document.getElementById('minimap-interact');
+    let isMinimapDragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let initialZoomOnDrag = 50;
+    let initialScroll = 0;
+    let dragMode = null; // 'pan' (左右平移) | 'zoom' (上下缩放) | null
+
+    const handlePan = (clientX) => {
+        // 1. 获取 Minimap 的范围
+        const rect = interactLayer.getBoundingClientRect();
+        let x = clientX - rect.left;
+        x = Math.max(0, Math.min(rect.width, x));
+        const percent = x / rect.width;
+
+        // 2. 使用官方提供的 seekTo 方法 (百分比进度跳转)
+        // 这是最稳健的方案，它会触发 WaveSurfer 内部所有的状态同步，不会破坏 DOM 结构
+        wavesurfer.seekTo(percent);
+    };
+    
+    let isDragging = false; // 全局变量
+
+    // 在你的鼠标按下事件里：
+    interactLayer.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        handlePan(e.clientX);
+    });
+
+    // 监听全局鼠标移动：
+    window.addEventListener('mousemove', (e) => {
+        if (isDragging) {
+            handlePan(e.clientX);
+        }
+    });
+
+    // 鼠标抬起：
+    window.addEventListener('mouseup', () => {
+        isDragging = false;
+    });
+
+    const updateAbletonOverview = (e) => {
+        if (!wavesurfer) return;
+
+        // 确定拖拽模式（5px 阈值防误触，一旦突破死区，锁定单轴意图互不干扰）
+        if (dragMode === null) {
+            const dx = Math.abs(e.clientX - dragStartX);
+            const dy = Math.abs(e.clientY - dragStartY);
+            if (dx > 5 || dy > 5) {
+                dragMode = dx > dy ? 'pan' : 'zoom';
+            } else {
+                return; // 未达到阈值不触发
+            }
+        }
+
+        if (dragMode === 'pan') {
+            handlePan(e.clientX);
+        } else if (dragMode === 'zoom') {
+            const dy = e.clientY - dragStartY; 
+            let newZoom = initialZoomOnDrag + dy * 4; 
+            newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
+            
+            if (Math.abs(newZoom - wavesurfer.options.minPxPerSec) >= 1) {
+                wavesurfer.zoom(newZoom);
+                ui.zoomSlider.value = newZoom;
+            }
+        }
+    };
+
+    interactLayer.addEventListener('mousedown', (e) => {
+        isMinimapDragging = true;
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        dragMode = null;
+        if (wavesurfer) {
+            initialZoomOnDrag = wavesurfer.options.minPxPerSec;
+            const wrapper = wavesurfer.getWrapper();
+            const scrollContainer = wrapper.shadowRoot?.querySelector('[part="container"]') || 
+                                   wrapper.querySelector('div') || 
+                                   wrapper;
+            initialScroll = scrollContainer.scrollLeft;
+        }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!isMinimapDragging) return;
+        e.preventDefault(); 
+        updateAbletonOverview(e);
+    });
+
+    window.addEventListener('mouseup', (e) => {
+        if (isMinimapDragging && dragMode === null && wavesurfer) {
+            const duration = wavesurfer.getDuration();
+            if (duration) {
+                const rect = interactLayer.getBoundingClientRect();
+                let x = e.clientX - rect.left;
+                x = Math.max(0, Math.min(rect.width, x));
+                const percent = x / rect.width;
+                const wrapper = wavesurfer.getWrapper();
+                const scrollContainer = wrapper.shadowRoot?.querySelector('[part="container"]') || 
+                                       wrapper.querySelector('div') || 
+                                       wrapper;
+                const scrollWidth = scrollContainer.scrollWidth;
+                const maxScroll = Math.max(0, scrollWidth - wrapper.clientWidth);
+                let targetScroll = percent * scrollWidth;
+                targetScroll = targetScroll - (wrapper.clientWidth / 2);
+                targetScroll = Math.max(0, Math.min(maxScroll, targetScroll));
+                scrollContainer.scrollLeft = targetScroll;
+            }
+        }
+        isMinimapDragging = false;
+        dragMode = null;
+    });
+
+    // 🚀 高性能单点数字更新函数（核心防卡顿逻辑）
+    function updateRowInputsOnly(region) {
+        const tr = ui.tbody.querySelector(`tr[data-id="${region.id}"]`);
+        if (tr) {
+            const inputStart = tr.querySelector('.input-start');
+            const inputEnd = tr.querySelector('.input-end');
+            if (inputStart) inputStart.value = region.start.toFixed(3);
+            if (inputEnd) inputEnd.value = region.end.toFixed(3);
+        }
+    }
+
+    // 完整重绘渲染函数
+    function renderTable() {
+        if (!wsRegions || !wavesurfer) return;
+        
+        const regions = wsRegions.getRegions();
+        // 按时间先后顺序重新排序
+        regions.sort((a, b) => a.start - b.start);
+
+        ui.tbody.innerHTML = '';
+        if (regions.length === 0) {
+            ui.tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#555;">暂无片段，请在上方波形图拖拽框选</td></tr>';
+            return;
+        }
+
+        const totalDuration = wavesurfer.getDuration();
+        let isAllChecked = true;
+
+        regions.forEach(region => {
+            if (!region.data.checked) isAllChecked = false;
+
+            const tr = document.createElement('tr');
+            tr.dataset.id = region.id; // 标记唯一标识，方便单点增量更新
+            if (region.id === selectedRegionId) tr.className = 'selected-row';
+
+            tr.addEventListener('click', () => {
+                if (selectedRegionId !== region.id) {
+                    selectedRegionId = region.id;
+                    renderTable();
+                }
+            });
+            
+            // 1. 复选框
+            const tdCheck = document.createElement('td');
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox'; checkbox.checked = region.data.checked;
+            checkbox.addEventListener('change', (e) => {
+                region.data.checked = e.target.checked;
+                updateSelectAllCheckboxState(); 
+            });
+            tdCheck.appendChild(checkbox);
+
+            // 2. 重命名输入框
+            const tdName = document.createElement('td');
+            const inputName = document.createElement('input');
+            inputName.type = 'text'; inputName.value = region.data.name;
+            inputName.addEventListener('input', (e) => { region.data.name = e.target.value; });
+            tdName.appendChild(inputName);
+
+            // 3. 开始时间（带有专用 class 用于增量更新）
+            const tdStart = document.createElement('td');
+            const inputStart = document.createElement('input');
+            inputStart.type = 'number'; inputStart.className = 'input-start';
+            inputStart.step = '0.001'; inputStart.min = '0';
+            inputStart.max = totalDuration.toFixed(3); inputStart.value = region.start.toFixed(3);
+            inputStart.addEventListener('change', (e) => {
+                let newVal = parseFloat(e.target.value);
+                if (isNaN(newVal) || newVal < 0) newVal = 0;
+                if (newVal >= region.end) newVal = region.end - 0.001; 
+                region.setOptions({ start: newVal });
+            });
+            tdStart.appendChild(inputStart);
+
+            // 4. 结束时间（带有专用 class 用于增量更新）
+            const tdEnd = document.createElement('td');
+            const inputEnd = document.createElement('input');
+            inputEnd.type = 'number'; inputEnd.className = 'input-end';
+            inputEnd.step = '0.001'; inputEnd.min = '0';
+            inputEnd.max = totalDuration.toFixed(3); inputEnd.value = region.end.toFixed(3);
+            inputEnd.addEventListener('change', (e) => {
+                let newVal = parseFloat(e.target.value);
+                if (isNaN(newVal) || newVal > totalDuration) newVal = totalDuration;
+                if (newVal <= region.start) newVal = region.start + 0.001;
+                region.setOptions({ end: newVal });
+            });
+            tdEnd.appendChild(inputEnd);
+
+            // 5. 操作项
+            const tdOps = document.createElement('td');
+            const btnPlay = document.createElement('button');
+            btnPlay.textContent = '▶'; btnPlay.style.marginRight = '5px';
+            btnPlay.onclick = (e) => { e.stopPropagation(); region.play(); };
+            
+            const btnDelete = document.createElement('button');
+            btnDelete.textContent = 'DELETE'; btnDelete.className = 'danger';
+            btnDelete.onclick = (e) => {
+                e.stopPropagation();
+                recordHistory({ type: 'delete', regionId: region.id, start: region.start, end: region.end, data: { ...region.data } });
+                region.remove();
+                if (selectedRegionId === region.id) selectedRegionId = null;
+                renderTable();
+            };
+
+            tdOps.appendChild(btnPlay); tdOps.appendChild(btnDelete);
+            tr.append(tdCheck, tdName, tdStart, tdEnd, tdOps);
+            ui.tbody.appendChild(tr);
+        });
+
+        ui.checkAll.checked = isAllChecked;
+    }
+
+    function updateSelectAllCheckboxState() {
+        const regions = wsRegions.getRegions();
+        if (regions.length === 0) return;
+        ui.checkAll.checked = regions.every(r => r.data.checked);
+    }
+
+    ui.checkAll.addEventListener('change', (e) => {
+        if (!wsRegions) return;
+        const regions = wsRegions.getRegions();
+        regions.forEach(r => { r.data.checked = e.target.checked; });
+        renderTable();
+    });
+
+    function recordHistory(action) {
+        historyStack.push(action);
+        if (historyStack.length > 30) historyStack.shift();
+        updateUndoButton();
+    }
+
+    function updateUndoButton() { ui.undo.disabled = historyStack.length === 0; }
+
+    ui.undo.addEventListener('click', () => {
+        const lastAction = historyStack.pop();
+        if (!lastAction) return;
+
+        if (lastAction.type === 'create') {
+            const regions = wsRegions.getRegions();
+            const r = regions.find(reg => reg.id === lastAction.regionId);
+            if (r) r.remove();
+            if (selectedRegionId === lastAction.regionId) selectedRegionId = null;
+        } else if (lastAction.type === 'delete') {
+            wsRegions.addRegion({
+                id: lastAction.regionId,
+                start: lastAction.start,
+                end: lastAction.end,
+                color: 'rgba(255, 85, 0, 0.2)',
+                data: lastAction.data
+            });
+            selectedRegionId = lastAction.regionId; 
+        }
+        updateUndoButton();
+        renderTable();
+    });
+
+    // 批量导出逻辑
+    ui.export.addEventListener('click', async () => {
+        if (!audioBuffer) return alert("错误：音频文件未完全加载和解析！");
+        
+        const regions = wsRegions.getRegions();
+        const checkedRegions = regions.filter(r => r.data && r.data.checked);
+        
+        if (checkedRegions.length === 0) return alert("请在下方列表中勾选需要导出的片段！");
+
+        ui.export.disabled = true;
+        ui.export.textContent = "⚙️ EXPORTING...";
+
+        try {
+            for (let i = 0; i < checkedRegions.length; i++) {
+                const region = checkedRegions[i];
+                await exportAudioSegment(audioBuffer, region.start, region.end, region.data.name);
+                await new Promise(resolve => setTimeout(resolve, 400));
+            }
+        } catch (err) {
+            console.error(err);
+            alert("导出过程中发生错误");
+        } finally {
+            ui.export.disabled = false;
+            ui.export.textContent = "⬇️ EXPORT SELECTED CLIPS (WAV)";
+        }
+    });
+
+    async function exportAudioSegment(buffer, startSec, endSec, filename) {
+        const sampleRate = buffer.sampleRate;
+        const startOffset = Math.floor(startSec * sampleRate);
+        const endOffset = Math.floor(endSec * sampleRate);
+        const frameCount = endOffset - startOffset;
+        
+        const offlineCtx = new OfflineAudioContext(buffer.numberOfChannels, frameCount, sampleRate);
+        const source = offlineCtx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(offlineCtx.destination);
+        source.start(0, startSec, endSec - startSec);
+        
+        const renderedBuffer = await offlineCtx.startRendering();
+        const wavBlob = bufferToWave(renderedBuffer, frameCount);
+        
+        const url = URL.createObjectURL(wavBlob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = `${filename.trim() || 'Untitled'}.wav`;
+        document.body.appendChild(a);
+        a.click();
+        
+        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+    }
+
+    function bufferToWave(abuffer, len) {
+        let numOfChan = abuffer.numberOfChannels,
+            length = len * numOfChan * 2 + 44,
+            buffer = new ArrayBuffer(length),
+            view = new DataView(buffer),
+            channels = [], i, sample, offset = 0, pos = 0;
+
+        function setUint16(data) { view.setUint16(pos, data, true); pos += 2; }
+        function setUint32(data) { view.setUint32(pos, data, true); pos += 4; }
+
+        setUint32(0x46464952); setUint32(length - 8); setUint32(0x45564157); setUint32(0x20746d66); 
+        setUint32(16); setUint16(1); setUint16(numOfChan); setUint32(abuffer.sampleRate);
+        setUint32(abuffer.sampleRate * 2 * numOfChan); setUint16(numOfChan * 2); setUint16(16); 
+        setUint32(0x61746164); setUint32(length - pos - 4); 
+
+        for (i = 0; i < abuffer.numberOfChannels; i++) { channels.push(abuffer.getChannelData(i)); }
+        while (pos < length) {
+            for (i = 0; i < numOfChan; i++) {
+                sample = Math.max(-1, Math.min(1, channels[i][offset]));
+                sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767) | 0;
+                view.setInt16(pos, sample, true); pos += 2;
+            }
+            offset++;
+        }
+        return new Blob([buffer], { type: "audio/wav" });
+    }
+</script>
+</body>
+</html>
