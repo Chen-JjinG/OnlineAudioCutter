@@ -1,0 +1,6 @@
+dist/
+.openai/
+.DS_Store
+node_modules/
+tests/output/
+*.log

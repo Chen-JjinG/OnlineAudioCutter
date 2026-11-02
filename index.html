@@ -1,795 +1,89 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
+<!doctype html>
+<html lang="zh-CN" data-theme="light" data-sidebar="expanded">
 <head>
-    <meta charset="UTF-8">
-    <title>Ableton Style Pro Cutter (Turbo Smooth)</title>
-    <script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
-    <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/regions.min.js"></script>
-    <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/minimap.min.js"></script>
-    <style>
-        /* Ableton Live 经典暗黑皮肤配色 */
-        :root {
-            --bg-main: #202020;
-            --bg-panel: #2c2c2c;
-            --bg-control: #383838;
-            --bg-input: #1a1a1a;
-            --text-main: #b5b5b5;
-            --text-bright: #e5e5e5;
-            --ableton-orange: #ff5500;
-            --ableton-yellow: #fdff00;
-            --border-color: #1a1a1a;
-        }
-
-        body { 
-            font-family: 'Consolas', 'Helvetica Neue', Arial, sans-serif; 
-            background: var(--bg-main); 
-            color: var(--text-main); 
-            padding: 20px;
-            margin: 0;
-            font-size: 12px;
-            user-select: none;
-            overflow-x: hidden;
-        }
-
-        .container { 
-            max-width: 1100px; 
-            margin: 0 auto; 
-            background: var(--bg-panel); 
-            padding: 15px; 
-            border: 1px solid #444;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.5); 
-        }
-
-        h2 {
-            font-size: 14px;
-            font-weight: normal;
-            color: var(--text-bright);
-            margin-top: 0;
-            margin-bottom: 15px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 8px;
-            display: flex;
-            justify-content: space-between;
-        }
-
-        /* 工具栏 */
-        .toolbar { 
-            background: var(--bg-control);
-            padding: 6px 10px;
-            display: flex; 
-            gap: 12px; 
-            align-items: center; 
-            flex-wrap: wrap;
-            border: 1px solid var(--border-color);
-            margin-bottom: 10px;
-        }
-
-        .control-group {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .file-upload-btn {
-            display: inline-block;
-            padding: 5px 12px;
-            background: #444;
-            color: var(--text-bright);
-            border: 1px solid var(--border-color);
-            cursor: pointer;
-        }
-        .file-upload-btn:hover { background: #555; }
-        input[type="file"] { display: none; }
-
-        button { 
-            padding: 5px 12px; 
-            background: #444; 
-            color: var(--text-bright); 
-            border: 1px solid var(--border-color); 
-            border-radius: 0px; 
-            cursor: pointer; 
-            font-size: 12px;
-        }
-        button:hover { background: #555; }
-        button:disabled { color: #666; background: #333; cursor: not-allowed; }
-        
-        button.primary { background: var(--ableton-orange); color: #000; font-weight: bold; }
-        button.primary:hover { background: #ff661a; }
-        button.danger { background: #5a2c2c; color: #ff8888; }
-        button.danger:hover { background: #7a3c3c; }
-
-        /* 时间轴缩放 */
-        .zoom-controls { margin-left: auto; }
-        .zoom-controls button { padding: 2px 8px; font-size: 10px; }
-        input[type="range"] {
-            -webkit-appearance: none;
-            width: 120px; height: 4px; background: #1a1a1a; outline: none; cursor: pointer;
-        }
-        input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none; width: 12px; height: 12px; background: var(--ableton-yellow); border-radius: 6px;
-        }
-
-        /* 快捷键提示面板 */
-        .shortcut-guide {
-            background: #242424; border: 1px solid var(--border-color); padding: 6px 12px; margin-bottom: 10px; font-size: 11px; color: #888; display: flex; gap: 15px; flex-wrap: wrap;
-        }
-        .shortcut-guide span b { color: var(--ableton-yellow); font-weight: normal; }
-
-        /* 轨道大容器 */
-        .track-wrapper {
-            background: #1c1c1c;
-            border: 1px solid var(--border-color);
-            padding: 5px;
-            margin-bottom: 15px;
-        }
-
-        /* Ableton 式顶部 Overview 全景预览窗容器 */
-        #minimap-container {
-            position: relative;
-            width: 100%;
-            height: 38px;
-            margin-bottom: 4px;
-        }
-        #minimap {
-            width: 100%;
-            height: 100%;
-            background: #151515;
-            border-bottom: 2px solid #111;
-        }
-        #minimap-interact {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 10;
-            cursor: crosshair;
-        }
-
-        /* 主波形轨 */
-        #waveform { 
-            width: 100%; 
-            height: 150px; 
-            background: #181818; 
-            overflow: hidden;
-            position: relative;
-        }
-        #waveform ::part(container) {
-            overflow-x: auto !important;
-            overflow-y: hidden !important;
-            scrollbar-width: none !important;
-            -ms-overflow-style: none !important;
-        }
-        #waveform ::part(container)::-webkit-scrollbar {
-            display: none !important;
-        }
-        #waveform > * {
-            overflow-x: auto !important;
-            overflow-y: hidden !important;
-            scrollbar-width: none !important;
-            -ms-overflow-style: none !important;
-        }
-        #waveform > *::-webkit-scrollbar {
-            display: none !important;
-        }
-
-        /* 表格样式 */
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; background: #242424; }
-        th, td { border: 1px solid var(--border-color); padding: 6px 10px; text-align: left; font-size: 12px; }
-        th { background: var(--bg-control); color: var(--text-bright); font-weight: normal; }
-        tr:nth-child(even) { background: #282828; }
-        tr.selected-row { background: #3c3c3c !important; border-left: 3px solid var(--ableton-orange); }
-
-        input[type="text"], input[type="number"] {
-            background: var(--bg-input); border: 1px solid #444; color: var(--text-bright); padding: 3px 6px; font-family: inherit; font-size: 12px; width: 90%; -moz-appearance: textfield;
-        }
-        input[type="text"]:focus, input[type="number"]:focus { border-color: var(--ableton-orange); outline: none; }
-        input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-        input[type="checkbox"] { accent-color: var(--ableton-orange); cursor: pointer; }
-    </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="在浏览器中精确剪辑音频，导出 WAV、MP3 与 OGG。音频留在你的设备上。">
+  <title>Audio Cutter · 在线音频剪辑</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='12' fill='%2310a37f'/%3E%3Cpath d='M10 17v6m6-12v18m8-15v12m6-8v4' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/styles.css">
+  <script defer src="vendor/wavesurfer.min.js"></script>
+  <script defer src="vendor/regions.min.js"></script>
+  <script defer src="vendor/minimap.min.js"></script>
+  <script defer src="js/app.js"></script>
 </head>
 <body>
-
-<div class="container">
-    <h2>
-        <span>Precise Live Audio Cutter (Arrangement View)</span>
-        <span style="font-size:11px; color:#666;">v1.4 Performance & Shortcut Turbo</span>
-    </h2>
-    
-    <div class="toolbar">
-        <div class="control-group">
-            <label class="file-upload-btn">
-                <input type="file" id="audio-upload" accept="audio/*" />
-                LOAD AUDIO
-            </label>
-            <button id="btn-play-pause" disabled>PLAY / PAUSE</button>
-            <button id="btn-undo" disabled>UNDO</button>
-        </div>
-
-        <div class="control-group zoom-controls">
-            <span>ZOOM</span>
-            <button id="btn-zoom-out">➖</button>
-            <input type="range" id="zoom-slider" min="10" max="1000" value="50" step="10">
-            <button id="btn-zoom-in">➕</button>
-        </div>
+<svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <symbol id="i-wave" viewBox="0 0 24 24"><path d="M3 10v4m4-8v12m5-16v20m5-16v12m4-8v4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v13m-5-5 5 5 5-5M4 17v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></symbol>
+  <symbol id="i-scissors" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="m8 8 13 13M8 16 21 3m-7 7 3 3"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="m9 5 11 7-11 7Z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M5 5v14m14-14L8 12l11 7Z"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="m8 4-5 5 5 5M3 9h10a7 7 0 0 1 0 14"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24"><path d="m16 4 5 5-5 5m5-5H11a7 7 0 0 0 0 14"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></symbol>
+  <symbol id="i-loop" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4M3 11V8a2 2 0 0 1 2-2h16M7 22l-4-4 4-4m14-1v3a2 2 0 0 1-2 2H3"/></symbol>
+  <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 8V4h4m8 0h4v4m0 8v4h-4M8 20H4v-4M8 12h8"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h7m4 0h5M4 18h3m4 0h9"/><circle cx="13" cy="6" r="2"/><circle cx="9" cy="18" r="2"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 9a3 3 0 0 1 6 0c0 2-3 2-3 4m0 3h.01"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1 1m12 12 1 1M5 19l1-1M18 6l1-1"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+  <symbol id="i-volume" viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4Zm13-1a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M13 3H5v18h14V9Zm0 0v6h6M8 14v3m4-5v7m4-5v3"/></symbol>
+  <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16m6-11-3 3 3 3"/></symbol>
+</svg>
+<aside class="sidebar" id="app-sidebar">
+  <a class="brand" href="./" aria-label="Audio Cutter 首页"><span class="brand-mark"><svg class="icon"><use href="#i-wave"/></svg></span> Audio Cutter <span class="version">2.0</span></a>
+  <button class="new-project" id="sidebar-import"><svg class="icon"><use href="#i-plus"/></svg>导入音频<span class="key-hint">⌘ O</span></button>
+  <div class="nav-label">创作空间</div>
+  <nav aria-label="工作台导航">
+    <a class="nav-item active" href="#editor"><svg class="icon"><use href="#i-scissors"/></svg>音频剪辑<span class="nav-dot"></span></a>
+    <a class="nav-item" href="#export-panel"><svg class="icon"><use href="#i-sliders"/></svg>导出设置</a>
+    <button class="nav-item" id="sidebar-help"><svg class="icon"><use href="#i-help"/></svg>使用指南</button>
+  </nav>
+  <div class="nav-label project-label">当前项目</div>
+  <div class="sidebar-project"><svg class="icon"><use href="#i-file"/></svg><div><strong id="sidebar-filename">尚未导入音频</strong><span id="sidebar-file-info">从一段声音开始</span></div></div>
+  <div class="sidebar-bottom"><div class="privacy-note"><span class="privacy-icon"><svg class="icon"><use href="#i-lock"/></svg></span><div><strong>声音，只留在你的设备</strong><p>本地处理，无需上传音频。</p></div></div><button id="theme-toggle" class="theme-toggle"><svg class="icon"><use href="#i-sun"/></svg><span id="theme-label">切换深色模式</span></button></div>
+</aside>
+<main id="editor">
+  <header class="topbar"><div class="topbar-left"><button class="icon-button" id="sidebar-toggle" aria-label="收起侧栏" aria-controls="app-sidebar" aria-expanded="true" title="收起侧栏 · Ctrl/⌘ + \"><svg class="icon"><use href="#i-sidebar"/></svg></button><span>工作台 <span class="breadcrumb-separator">/</span> <strong>音频剪辑</strong></span></div><div class="topbar-right"><span class="local-status"><i></i> 本地工作空间</span><button class="icon-button" id="help-button" aria-label="打开使用指南"><svg class="icon"><use href="#i-help"/></svg></button></div></header>
+  <div class="workspace">
+    <div class="page-heading"><div><span class="eyebrow">A LITTLE CUT. A BETTER SOUND.</span><h1>让每一段声音，恰到好处。</h1><p>精准剪辑，轻松转换。把灵感留给创作。</p></div><button class="button secondary" id="header-import"><svg class="icon"><use href="#i-upload"/></svg><span>导入音频</span></button></div>
+    <section class="dropzone" id="dropzone" aria-label="导入音频"><div class="drop-icon"><svg class="icon"><use href="#i-wave"/></svg></div><div class="drop-copy"><h2 id="drop-title">把音频拖到这里</h2><p id="drop-description">支持 MP3、WAV、OGG、M4A、FLAC 等浏览器可解码的音频</p></div><button class="button primary" id="drop-import">选择文件<svg class="icon"><use href="#i-plus"/></svg></button><div class="loading-indicator" id="loading-indicator" hidden><span class="spinner"></span></div></section>
+    <input id="audio-upload" type="file" accept="audio/*,.mp3,.wav,.ogg,.oga,.m4a,.aac,.flac,.opus,.aiff,.aif,.webm" hidden>
+    <div id="file-strip" class="file-strip" hidden><span class="file-symbol"><svg class="icon"><use href="#i-file"/></svg></span><div class="file-description"><strong id="file-name"></strong><span id="file-meta"></span></div><span class="badge">已就绪</span><button class="icon-button" id="replace-file" aria-label="更换音频文件" title="更换音频文件"><svg class="icon"><use href="#i-upload"/></svg></button></div>
+    <p id="error-banner" class="error-banner" role="alert" hidden></p>
+    <div class="editor-grid">
+      <div class="editing-column">
+        <section class="card waveform-card" aria-labelledby="wave-heading">
+          <div class="card-heading"><div><h2 id="wave-heading">声音时间轴<span class="badge muted" id="duration-badge">等待导入</span></h2><p>拖拽框选片段，拖动边缘微调范围</p></div><div class="history-actions"><button class="icon-button" id="btn-undo" title="撤销 · Ctrl/⌘ Z" aria-label="撤销" disabled><svg class="icon"><use href="#i-undo"/></svg></button><button class="icon-button" id="btn-redo" title="重做 · Ctrl/⌘ Shift Z" aria-label="重做" disabled><svg class="icon"><use href="#i-redo"/></svg></button></div></div>
+          <div class="wave-surface" id="wave-surface"><div class="wave-placeholder" id="wave-placeholder"><svg viewBox="0 0 560 100" aria-hidden="true"><path d="M6 47v6m10-14v28m10-20v6m10-25v44m10-54v64m10-43v22m10-15v9m10-22v36m10-62v88m10-65v42m10-30v18m10-24v30m10-47v64m10-78v92m10-68v44m10-30v16m10-40v66m10-77v88m10-52v18m10-30v40m10-48v56m10-41v25m10-19v14m10-42v69m10-54v40m10-31v22m10-50v80m10-89v98m10-74v50m10-40v30m10-26v22m10-40v58m10-49v40m10-27v14m10-18v20m10-39v62m10-54v46m10-66v86m10-59v32m10-21v10m10-33v58m10-38v18m10-25v32m10-41v50m10-34v18m10-22v26m10-17v9m10-19v30m10-23v16m10-25v36m10-28v18m10-13v8m10-8v6m10-5v4m10-4v4m10-3v2"/></svg><span>你的下一段好声音，从这里开始</span></div><div id="timeline" aria-hidden="true"></div><div id="waveform" aria-label="音频波形，拖拽创建片段"></div></div>
+          <div class="overview" id="overview" hidden><div id="minimap"></div><div id="minimap-interact" title="左右拖动平移视图，上下拖动缩放；单击跳转播放位置" role="slider" tabindex="0" aria-label="音频总览位置" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div></div>
+          <div class="transport"><div class="play-controls"><button class="icon-button" id="btn-rewind" aria-label="回到开头" title="回到开头" disabled><svg class="icon"><use href="#i-back"/></svg></button><button class="play-button" id="btn-play-pause" aria-label="播放" title="播放 / 暂停 · 空格" disabled><svg class="icon"><use href="#i-play"/></svg></button><div class="time-display"><strong id="current-time">00:00.000</strong><span>/</span><span id="total-time">00:00.000</span></div></div><div class="transport-right"><button class="icon-button toggle" id="btn-loop" aria-label="循环试听片段" title="循环试听片段" aria-pressed="false" disabled><svg class="icon"><use href="#i-loop"/></svg></button><label class="volume-control"><svg class="icon"><use href="#i-volume"/></svg><input id="volume-slider" type="range" min="0" max="1" value="0.8" step="0.01" aria-label="试听音量"></label></div></div>
+          <div class="waveform-footer"><span><span class="hint-dot"></span><span id="selection-hint">导入音频后，即可框选片段</span></span><div class="zoom-controls"><button class="icon-button small" id="btn-zoom-out" aria-label="缩小波形" disabled><svg class="icon"><use href="#i-minus"/></svg></button><input id="zoom-slider" type="range" min="0" max="100" value="0" step="1" aria-label="时间轴缩放" disabled><button class="icon-button small" id="btn-zoom-in" aria-label="放大波形" disabled><svg class="icon"><use href="#i-plus"/></svg></button><button class="icon-button small" id="btn-fit" aria-label="显示完整音频" title="显示完整音频 · 0" disabled><svg class="icon"><use href="#i-fit"/></svg></button></div></div>
+        </section>
+        <section class="card clips-card" aria-labelledby="clips-heading"><div class="card-heading"><div><h2 id="clips-heading">我的片段<span class="count-pill" id="clip-count">0</span></h2><p>为声音命名，按你的节奏整理</p></div><button class="button secondary compact" id="btn-add-clip" disabled><svg class="icon"><use href="#i-plus"/></svg>添加片段</button></div><div id="clips-empty" class="clips-empty"><span class="empty-scissors"><svg class="icon"><use href="#i-scissors"/></svg></span><strong>还没有片段</strong><p>在波形上拖拽框选，或点击「添加片段」。<br>也可以直接导出整段音频。</p></div><div id="clip-table-wrap" class="clip-table-wrap" hidden><table id="segments-table"><thead><tr><th class="check-cell"><input id="check-all" type="checkbox" aria-label="选择所有片段"></th><th>片段名称</th><th>开始 <span>秒</span></th><th>结束 <span>秒</span></th><th>时长</th><th class="actions-heading">操作</th></tr></thead><tbody></tbody></table></div><div class="clips-footer"><span id="clips-summary">0 个片段</span><button class="text-button" id="btn-clear-clips" disabled>清空片段</button></div></section>
+        <div class="keyboard-tips"><span><kbd>Space</kbd> 播放 / 暂停</span><span><kbd>Ctrl</kbd> + 滚轮 缩放</span><span><kbd>Del</kbd> 删除片段</span><button class="text-button" id="shortcuts-button">全部快捷键 <span>↗</span></button></div>
+      </div>
+      <aside class="card export-panel" id="export-panel" aria-labelledby="export-heading"><div class="export-title"><span class="export-symbol"><svg class="icon"><use href="#i-download"/></svg></span><h2 id="export-heading">导出音频</h2></div><p class="panel-description">选择适合这段声音的格式。</p><fieldset class="format-field"><legend>文件格式</legend><div class="format-options"><label class="format-choice"><input type="radio" name="format" value="wav" checked><span><strong>WAV</strong><small>无损</small></span></label><label class="format-choice"><input type="radio" name="format" value="mp3"><span><strong>MP3</strong><small>通用</small></span></label><label class="format-choice"><input type="radio" name="format" value="ogg"><span><strong>OGG</strong><small>游戏</small></span></label></div></fieldset><p class="format-description" id="format-description">无损 PCM，适合后期制作与音频存档。</p>
+        <label class="field" id="quality-field"><span id="quality-label">位深</span><select id="export-quality" aria-label="导出音质"><option value="16">16 bit · 标准</option><option value="24">24 bit · 高精度</option><option value="32">32 bit float · 浮点</option></select></label>
+        <label class="field"><span>采样率</span><select id="export-samplerate"><option value="0">跟随项目</option><option value="44100">44.1 kHz</option><option value="48000">48 kHz</option></select></label>
+        <label class="field"><span>声道</span><select id="export-channels"><option value="0">保留原声道</option><option value="1">单声道</option><option value="2">立体声</option></select></label>
+        <label class="field"><span>边缘淡入淡出 <span class="optional-label">可选</span></span><select id="export-fade"><option value="0">关闭 · 保留原始边缘</option><option value="5">5 ms · 减少爆音</option><option value="10">10 ms</option><option value="50">50 ms</option><option value="100">100 ms</option></select></label>
+        <div class="export-divider"></div><div class="export-summary"><span>导出范围</span><strong id="export-scope">整段音频</strong><span>总时长</span><strong id="export-duration">—</strong><span>预计大小</span><strong id="export-size">—</strong></div><div class="export-progress" id="export-progress" hidden><div><span id="export-status">正在准备…</span><strong id="export-percent">0%</strong></div><progress id="export-progress-bar" max="1" value="0" aria-label="导出进度"></progress><button class="text-button" id="btn-cancel-export">取消导出</button></div><button class="button primary export-button" id="btn-export" disabled><svg class="icon"><use href="#i-download"/></svg><span id="export-button-label">导出音频</span></button><p class="export-footnote" id="export-footnote">音频在本地编码，无需等待上传。</p><div class="export-result" id="export-result" hidden></div>
+      </aside>
     </div>
-
-    <div class="shortcut-guide">
-        <span>⌨️ COMMANDS:</span>
-        <span><b>Space</b> 播放/暂停</span>
-        <span><b>Ctrl + 滚轮上下</b> / <b>键盘 + - 键</b> 丝滑缩放时间轴</span>
-        <span><b>小窗口拖拽</b> 左右平移 / 上下缩放</span>
-        <span><b>Delete / Backspace</b> 删除选中片段</span>
-        <span><b>Ctrl + Z</b> 撤回操作</span>
-    </div>
-
-    <div class="track-wrapper">
-        <div id="minimap-container">
-            <div id="minimap"></div>
-            <div id="minimap-interact" title="拖拽左右移动，拖拽上下缩放"></div>
-        </div>
-        <div id="waveform"></div>
-    </div>
-
-    <div class="toolbar" style="background: #242424;">
-        <label style="color: var(--text-bright); cursor: pointer;">
-            <input type="checkbox" id="check-all" checked /> SELECT ALL
-        </label>
-        <button id="btn-export" class="primary">⬇️ EXPORT SELECTED CLIPS (WAV)</button>
-    </div>
-
-    <table id="segments-table">
-        <thead>
-            <tr>
-                <th style="width: 60px;">EXPORT</th>
-                <th>CLIP NAME</th>
-                <th style="width: 140px;">START (S)</th>
-                <th style="width: 140px;">END (S)</th>
-                <th style="width: 120px;">ACTIONS</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr><td colspan="5" style="text-align:center; color:#555; padding: 20px;">请先导入音频文件...</td></tr>
-        </tbody>
-    </table>
-</div>
-
-<script>
-    const DEFAULT_ZOOM = 50; 
-    const MAX_ZOOM = 1000;
-    const MIN_ZOOM = 10;
-
-    let wavesurfer = null;
-    let wsRegions = null;
-    let wsMinimap = null;
-    let audioBuffer = null; 
-    let audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    let historyStack = []; 
-    let selectedRegionId = null; 
-    
-    const ui = {
-        upload: document.getElementById('audio-upload'),
-        playPause: document.getElementById('btn-play-pause'),
-        undo: document.getElementById('btn-undo'),
-        export: document.getElementById('btn-export'),
-        checkAll: document.getElementById('check-all'),
-        tbody: document.querySelector('#segments-table tbody'),
-        zoomSlider: document.getElementById('zoom-slider'),
-        zoomIn: document.getElementById('btn-zoom-in'),
-        zoomOut: document.getElementById('btn-zoom-out')
-    };
-
-    function initWavesurfer() {
-        if (wavesurfer) wavesurfer.destroy();
-        
-        wavesurfer = WaveSurfer.create({
-            container: '#waveform',
-            waveColor: '#4a4a4a', 
-            progressColor: '#ff5500', 
-            cursorColor: '#fdff00', 
-            cursorWidth: 1,
-            barWidth: 2,
-            barGap: 1,
-            height: 150,
-            minPxPerSec: DEFAULT_ZOOM
-        });
-
-        wsRegions = wavesurfer.registerPlugin(WaveSurfer.Regions.create());
-        wsRegions.enableDragSelection({ color: 'rgba(255, 85, 0, 0.25)' });
-
-        wsMinimap = wavesurfer.registerPlugin(WaveSurfer.Minimap.create({
-            container: '#minimap',
-            waveColor: '#333333',       
-            progressColor: '#444444',
-            height: 38,
-            overlayColor: 'rgba(255, 85, 0, 0.2)' 
-        }));
-
-        // 切片创建：首次生成整行表格
-        wsRegions.on('region-created', (region) => {
-            if (!region.data || !region.data.name) {
-                const count = wsRegions.getRegions().length;
-                region.data = { 
-                    name: 'Clip ' + String(count).padStart(2, '0'),
-                    checked: true 
-                };
-                recordHistory({ type: 'create', regionId: region.id, start: region.start, end: region.end, data: { ...region.data } });
-            }
-            selectedRegionId = region.id; 
-            renderTable();
-        });
-
-        // 🚀 性能大重构点 1：拖拽中禁止销毁重建 DOM，只做单点数字刷新，完全解除卡顿！
-        wsRegions.on('region-updated', (region) => {
-            updateRowInputsOnly(region);
-        });
-
-        // 🚀 性能大重构点 2：只有当鼠标松开（修改彻底结束）时，才排序重绘一次表格
-        wsRegions.on('region-update-end', () => {
-            renderTable();
-        });
-        
-        wsRegions.on('region-clicked', (region, e) => {
-            e.stopPropagation(); 
-            selectedRegionId = region.id;
-            renderTable();
-        });
-
-        wavesurfer.on('ready', () => {
-            ui.playPause.disabled = false;
-            ui.zoomSlider.value = wavesurfer.options.minPxPerSec;
-        });
-    }
-
-    // 接管鼠标滚轮事件实现 Ctrl + 滚轮无级缩放
-    window.addEventListener('wheel', (e) => {
-        if (e.ctrlKey) {
-            e.preventDefault(); 
-            if (!wavesurfer) return;
-
-            let currentZoom = wavesurfer.options.minPxPerSec;
-            let step = currentZoom < 100 ? 10 : (currentZoom < 400 ? 30 : 60);
-            let newZoom = e.deltaY < 0 ? (currentZoom + step) : (currentZoom - step);
-
-            handleZoomUpdate(newZoom);
-        }
-    }, { passive: false }); 
-
-    // 全局键盘快捷键接管
-    document.removeEventListener('keydown', handleGlobalShortcuts);
-    document.addEventListener('keydown', handleGlobalShortcuts);
-
-    function handleGlobalShortcuts(e) {
-        if (document.activeElement.tagName === 'INPUT') return; 
-
-        const regions = wsRegions ? wsRegions.getRegions() : [];
-
-        // 1. 空格键：播放/暂停
-        if (e.code === 'Space') {
-            e.preventDefault();
-            if (wavesurfer) wavesurfer.playPause();
-        }
-
-        // 2. Ctrl + Z：撤回
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-            e.preventDefault();
-            ui.undo.click();
-        }
-
-        // 3. Delete / Backspace：删除当前选中片段
-        if (e.key === 'Delete' || e.key === 'Backspace') {
-            if (selectedRegionId) {
-                const targetRegion = regions.find(r => r.id === selectedRegionId);
-                if (targetRegion) {
-                    e.preventDefault();
-                    recordHistory({ type: 'delete', regionId: targetRegion.id, start: targetRegion.start, end: targetRegion.end, data: { ...targetRegion.data } });
-                    targetRegion.remove();
-                    selectedRegionId = null;
-                    renderTable();
-                }
-            }
-        }
-
-        // 4. 键盘修复：加号 / 等号 放大时间轴
-        if (e.key === '=' || e.key === '+') {
-            e.preventDefault();
-            if (wavesurfer) handleZoomUpdate(wavesurfer.options.minPxPerSec + 40);
-        }
-
-        // 5. 键盘修复：减号 缩小时间轴
-        if (e.key === '-') {
-            e.preventDefault();
-            if (wavesurfer) handleZoomUpdate(wavesurfer.options.minPxPerSec - 40);
-        }
-    }
-
-    // 文件导入
-    ui.upload.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        
-        initWavesurfer();
-        ui.tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#888;">正在解析音频波形...</td></tr>';
-        historyStack = [];
-        selectedRegionId = null;
-        updateUndoButton();
-        ui.checkAll.checked = true;
-
-        const url = URL.createObjectURL(file);
-        wavesurfer.load(url);
-
-        const reader = new FileReader();
-        reader.onload = async (event) => {
-            const arrayBuffer = event.target.result;
-            audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-        };
-        reader.readAsArrayBuffer(file);
-    });
-
-    ui.playPause.addEventListener('click', () => wavesurfer.playPause());
-
-    // 缩放核心函数
-    const handleZoomUpdate = (newZoom) => {
-        if (!wavesurfer) return;
-        newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
-        wavesurfer.zoom(newZoom);
-        ui.zoomSlider.value = newZoom;
-    };
-
-    ui.zoomSlider.addEventListener('input', (e) => handleZoomUpdate(parseInt(e.target.value)));
-    ui.zoomIn.addEventListener('click', () => wavesurfer && handleZoomUpdate(wavesurfer.options.minPxPerSec + 40));
-    ui.zoomOut.addEventListener('click', () => wavesurfer && handleZoomUpdate(wavesurfer.options.minPxPerSec - 40));
-
-    // Ableton 风格的 Minimap 交互逻辑：带有死区防误触的互斥轴控制
-    const interactLayer = document.getElementById('minimap-interact');
-    let isMinimapDragging = false;
-    let dragStartX = 0;
-    let dragStartY = 0;
-    let initialZoomOnDrag = 50;
-    let initialScroll = 0;
-    let dragMode = null; // 'pan' (左右平移) | 'zoom' (上下缩放) | null
-
-    const handlePan = (clientX) => {
-        // 1. 获取 Minimap 的范围
-        const rect = interactLayer.getBoundingClientRect();
-        let x = clientX - rect.left;
-        x = Math.max(0, Math.min(rect.width, x));
-        const percent = x / rect.width;
-
-        // 2. 使用官方提供的 seekTo 方法 (百分比进度跳转)
-        // 这是最稳健的方案，它会触发 WaveSurfer 内部所有的状态同步，不会破坏 DOM 结构
-        wavesurfer.seekTo(percent);
-    };
-    
-    let isDragging = false; // 全局变量
-
-    // 在你的鼠标按下事件里：
-    interactLayer.addEventListener('mousedown', (e) => {
-        isDragging = true;
-        handlePan(e.clientX);
-    });
-
-    // 监听全局鼠标移动：
-    window.addEventListener('mousemove', (e) => {
-        if (isDragging) {
-            handlePan(e.clientX);
-        }
-    });
-
-    // 鼠标抬起：
-    window.addEventListener('mouseup', () => {
-        isDragging = false;
-    });
-
-    const updateAbletonOverview = (e) => {
-        if (!wavesurfer) return;
-
-        // 确定拖拽模式（5px 阈值防误触，一旦突破死区，锁定单轴意图互不干扰）
-        if (dragMode === null) {
-            const dx = Math.abs(e.clientX - dragStartX);
-            const dy = Math.abs(e.clientY - dragStartY);
-            if (dx > 5 || dy > 5) {
-                dragMode = dx > dy ? 'pan' : 'zoom';
-            } else {
-                return; // 未达到阈值不触发
-            }
-        }
-
-        if (dragMode === 'pan') {
-            handlePan(e.clientX);
-        } else if (dragMode === 'zoom') {
-            const dy = e.clientY - dragStartY; 
-            let newZoom = initialZoomOnDrag + dy * 4; 
-            newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
-            
-            if (Math.abs(newZoom - wavesurfer.options.minPxPerSec) >= 1) {
-                wavesurfer.zoom(newZoom);
-                ui.zoomSlider.value = newZoom;
-            }
-        }
-    };
-
-    interactLayer.addEventListener('mousedown', (e) => {
-        isMinimapDragging = true;
-        dragStartX = e.clientX;
-        dragStartY = e.clientY;
-        dragMode = null;
-        if (wavesurfer) {
-            initialZoomOnDrag = wavesurfer.options.minPxPerSec;
-            const wrapper = wavesurfer.getWrapper();
-            const scrollContainer = wrapper.shadowRoot?.querySelector('[part="container"]') || 
-                                   wrapper.querySelector('div') || 
-                                   wrapper;
-            initialScroll = scrollContainer.scrollLeft;
-        }
-    });
-
-    window.addEventListener('mousemove', (e) => {
-        if (!isMinimapDragging) return;
-        e.preventDefault(); 
-        updateAbletonOverview(e);
-    });
-
-    window.addEventListener('mouseup', (e) => {
-        if (isMinimapDragging && dragMode === null && wavesurfer) {
-            const duration = wavesurfer.getDuration();
-            if (duration) {
-                const rect = interactLayer.getBoundingClientRect();
-                let x = e.clientX - rect.left;
-                x = Math.max(0, Math.min(rect.width, x));
-                const percent = x / rect.width;
-                const wrapper = wavesurfer.getWrapper();
-                const scrollContainer = wrapper.shadowRoot?.querySelector('[part="container"]') || 
-                                       wrapper.querySelector('div') || 
-                                       wrapper;
-                const scrollWidth = scrollContainer.scrollWidth;
-                const maxScroll = Math.max(0, scrollWidth - wrapper.clientWidth);
-                let targetScroll = percent * scrollWidth;
-                targetScroll = targetScroll - (wrapper.clientWidth / 2);
-                targetScroll = Math.max(0, Math.min(maxScroll, targetScroll));
-                scrollContainer.scrollLeft = targetScroll;
-            }
-        }
-        isMinimapDragging = false;
-        dragMode = null;
-    });
-
-    // 🚀 高性能单点数字更新函数（核心防卡顿逻辑）
-    function updateRowInputsOnly(region) {
-        const tr = ui.tbody.querySelector(`tr[data-id="${region.id}"]`);
-        if (tr) {
-            const inputStart = tr.querySelector('.input-start');
-            const inputEnd = tr.querySelector('.input-end');
-            if (inputStart) inputStart.value = region.start.toFixed(3);
-            if (inputEnd) inputEnd.value = region.end.toFixed(3);
-        }
-    }
-
-    // 完整重绘渲染函数
-    function renderTable() {
-        if (!wsRegions || !wavesurfer) return;
-        
-        const regions = wsRegions.getRegions();
-        // 按时间先后顺序重新排序
-        regions.sort((a, b) => a.start - b.start);
-
-        ui.tbody.innerHTML = '';
-        if (regions.length === 0) {
-            ui.tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#555;">暂无片段，请在上方波形图拖拽框选</td></tr>';
-            return;
-        }
-
-        const totalDuration = wavesurfer.getDuration();
-        let isAllChecked = true;
-
-        regions.forEach(region => {
-            if (!region.data.checked) isAllChecked = false;
-
-            const tr = document.createElement('tr');
-            tr.dataset.id = region.id; // 标记唯一标识，方便单点增量更新
-            if (region.id === selectedRegionId) tr.className = 'selected-row';
-
-            tr.addEventListener('click', () => {
-                if (selectedRegionId !== region.id) {
-                    selectedRegionId = region.id;
-                    renderTable();
-                }
-            });
-            
-            // 1. 复选框
-            const tdCheck = document.createElement('td');
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox'; checkbox.checked = region.data.checked;
-            checkbox.addEventListener('change', (e) => {
-                region.data.checked = e.target.checked;
-                updateSelectAllCheckboxState(); 
-            });
-            tdCheck.appendChild(checkbox);
-
-            // 2. 重命名输入框
-            const tdName = document.createElement('td');
-            const inputName = document.createElement('input');
-            inputName.type = 'text'; inputName.value = region.data.name;
-            inputName.addEventListener('input', (e) => { region.data.name = e.target.value; });
-            tdName.appendChild(inputName);
-
-            // 3. 开始时间（带有专用 class 用于增量更新）
-            const tdStart = document.createElement('td');
-            const inputStart = document.createElement('input');
-            inputStart.type = 'number'; inputStart.className = 'input-start';
-            inputStart.step = '0.001'; inputStart.min = '0';
-            inputStart.max = totalDuration.toFixed(3); inputStart.value = region.start.toFixed(3);
-            inputStart.addEventListener('change', (e) => {
-                let newVal = parseFloat(e.target.value);
-                if (isNaN(newVal) || newVal < 0) newVal = 0;
-                if (newVal >= region.end) newVal = region.end - 0.001; 
-                region.setOptions({ start: newVal });
-            });
-            tdStart.appendChild(inputStart);
-
-            // 4. 结束时间（带有专用 class 用于增量更新）
-            const tdEnd = document.createElement('td');
-            const inputEnd = document.createElement('input');
-            inputEnd.type = 'number'; inputEnd.className = 'input-end';
-            inputEnd.step = '0.001'; inputEnd.min = '0';
-            inputEnd.max = totalDuration.toFixed(3); inputEnd.value = region.end.toFixed(3);
-            inputEnd.addEventListener('change', (e) => {
-                let newVal = parseFloat(e.target.value);
-                if (isNaN(newVal) || newVal > totalDuration) newVal = totalDuration;
-                if (newVal <= region.start) newVal = region.start + 0.001;
-                region.setOptions({ end: newVal });
-            });
-            tdEnd.appendChild(inputEnd);
-
-            // 5. 操作项
-            const tdOps = document.createElement('td');
-            const btnPlay = document.createElement('button');
-            btnPlay.textContent = '▶'; btnPlay.style.marginRight = '5px';
-            btnPlay.onclick = (e) => { e.stopPropagation(); region.play(); };
-            
-            const btnDelete = document.createElement('button');
-            btnDelete.textContent = 'DELETE'; btnDelete.className = 'danger';
-            btnDelete.onclick = (e) => {
-                e.stopPropagation();
-                recordHistory({ type: 'delete', regionId: region.id, start: region.start, end: region.end, data: { ...region.data } });
-                region.remove();
-                if (selectedRegionId === region.id) selectedRegionId = null;
-                renderTable();
-            };
-
-            tdOps.appendChild(btnPlay); tdOps.appendChild(btnDelete);
-            tr.append(tdCheck, tdName, tdStart, tdEnd, tdOps);
-            ui.tbody.appendChild(tr);
-        });
-
-        ui.checkAll.checked = isAllChecked;
-    }
-
-    function updateSelectAllCheckboxState() {
-        const regions = wsRegions.getRegions();
-        if (regions.length === 0) return;
-        ui.checkAll.checked = regions.every(r => r.data.checked);
-    }
-
-    ui.checkAll.addEventListener('change', (e) => {
-        if (!wsRegions) return;
-        const regions = wsRegions.getRegions();
-        regions.forEach(r => { r.data.checked = e.target.checked; });
-        renderTable();
-    });
-
-    function recordHistory(action) {
-        historyStack.push(action);
-        if (historyStack.length > 30) historyStack.shift();
-        updateUndoButton();
-    }
-
-    function updateUndoButton() { ui.undo.disabled = historyStack.length === 0; }
-
-    ui.undo.addEventListener('click', () => {
-        const lastAction = historyStack.pop();
-        if (!lastAction) return;
-
-        if (lastAction.type === 'create') {
-            const regions = wsRegions.getRegions();
-            const r = regions.find(reg => reg.id === lastAction.regionId);
-            if (r) r.remove();
-            if (selectedRegionId === lastAction.regionId) selectedRegionId = null;
-        } else if (lastAction.type === 'delete') {
-            wsRegions.addRegion({
-                id: lastAction.regionId,
-                start: lastAction.start,
-                end: lastAction.end,
-                color: 'rgba(255, 85, 0, 0.2)',
-                data: lastAction.data
-            });
-            selectedRegionId = lastAction.regionId; 
-        }
-        updateUndoButton();
-        renderTable();
-    });
-
-    // 批量导出逻辑
-    ui.export.addEventListener('click', async () => {
-        if (!audioBuffer) return alert("错误：音频文件未完全加载和解析！");
-        
-        const regions = wsRegions.getRegions();
-        const checkedRegions = regions.filter(r => r.data && r.data.checked);
-        
-        if (checkedRegions.length === 0) return alert("请在下方列表中勾选需要导出的片段！");
-
-        ui.export.disabled = true;
-        ui.export.textContent = "⚙️ EXPORTING...";
-
-        try {
-            for (let i = 0; i < checkedRegions.length; i++) {
-                const region = checkedRegions[i];
-                await exportAudioSegment(audioBuffer, region.start, region.end, region.data.name);
-                await new Promise(resolve => setTimeout(resolve, 400));
-            }
-        } catch (err) {
-            console.error(err);
-            alert("导出过程中发生错误");
-        } finally {
-            ui.export.disabled = false;
-            ui.export.textContent = "⬇️ EXPORT SELECTED CLIPS (WAV)";
-        }
-    });
-
-    async function exportAudioSegment(buffer, startSec, endSec, filename) {
-        const sampleRate = buffer.sampleRate;
-        const startOffset = Math.floor(startSec * sampleRate);
-        const endOffset = Math.floor(endSec * sampleRate);
-        const frameCount = endOffset - startOffset;
-        
-        const offlineCtx = new OfflineAudioContext(buffer.numberOfChannels, frameCount, sampleRate);
-        const source = offlineCtx.createBufferSource();
-        source.buffer = buffer;
-        source.connect(offlineCtx.destination);
-        source.start(0, startSec, endSec - startSec);
-        
-        const renderedBuffer = await offlineCtx.startRendering();
-        const wavBlob = bufferToWave(renderedBuffer, frameCount);
-        
-        const url = URL.createObjectURL(wavBlob);
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = url;
-        a.download = `${filename.trim() || 'Untitled'}.wav`;
-        document.body.appendChild(a);
-        a.click();
-        
-        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
-    }
-
-    function bufferToWave(abuffer, len) {
-        let numOfChan = abuffer.numberOfChannels,
-            length = len * numOfChan * 2 + 44,
-            buffer = new ArrayBuffer(length),
-            view = new DataView(buffer),
-            channels = [], i, sample, offset = 0, pos = 0;
-
-        function setUint16(data) { view.setUint16(pos, data, true); pos += 2; }
-        function setUint32(data) { view.setUint32(pos, data, true); pos += 4; }
-
-        setUint32(0x46464952); setUint32(length - 8); setUint32(0x45564157); setUint32(0x20746d66); 
-        setUint32(16); setUint16(1); setUint16(numOfChan); setUint32(abuffer.sampleRate);
-        setUint32(abuffer.sampleRate * 2 * numOfChan); setUint16(numOfChan * 2); setUint16(16); 
-        setUint32(0x61746164); setUint32(length - pos - 4); 
-
-        for (i = 0; i < abuffer.numberOfChannels; i++) { channels.push(abuffer.getChannelData(i)); }
-        while (pos < length) {
-            for (i = 0; i < numOfChan; i++) {
-                sample = Math.max(-1, Math.min(1, channels[i][offset]));
-                sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767) | 0;
-                view.setInt16(pos, sample, true); pos += 2;
-            }
-            offset++;
-        }
-        return new Blob([buffer], { type: "audio/wav" });
-    }
-</script>
+    <footer class="page-footer"><span>少一点繁琐，多一点创作。</span><span>Audio Cutter <span class="footer-dot">·</span> Made for your sound.</span></footer>
+  </div>
+</main>
+<div id="drag-overlay" class="drag-overlay" hidden><div><svg class="icon"><use href="#i-upload"/></svg><h2>松开，导入这段声音</h2><p>一次编辑一份音频</p></div></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<dialog id="help-dialog"><div class="dialog-heading"><div><span class="eyebrow">YOUR SOUND, YOUR WAY.</span><h2>开始剪辑，很简单。</h2></div><button class="icon-button" id="close-help" aria-label="关闭使用指南"><svg class="icon"><use href="#i-close"/></svg></button></div><ol class="guide-steps"><li><strong>导入你的声音</strong><p>选择音频，或拖到页面中。文件始终保留在你的设备上。</p></li><li><strong>留下需要的片段</strong><p>在波形空白处拖拽框选；拖动片段移动位置，拖动两侧调整边界。列表支持毫秒级时间输入和重命名，双击片段可试听。</p></li><li><strong>选择格式，一键导出</strong><p>WAV 提供 16 / 24 bit PCM 和 32 bit float；MP3 提供 128–320 kbps；OGG 使用 Vorbis 编码。多个片段自动打包为 ZIP。</p></li></ol><div class="shortcut-list"><span>播放 / 暂停</span><kbd>Space</kbd><span>撤销 / 重做</span><kbd>Ctrl/⌘ Z · Shift Z</kbd><span>添加片段 / 删除片段</span><kbd>A · Delete</kbd><span>放大 / 缩小 / 全景</span><kbd>+ · − · 0</kbd><span>前进 / 后退 5 秒</span><kbd>→ · ←</kbd><span>导入文件</span><kbd>Ctrl/⌘ O</kbd></div><p class="guide-note">试听音量不影响导出音量。选择淡入淡出会改变片段边缘；制作循环素材时可保持关闭。</p></dialog>
 </body>
 </html>
