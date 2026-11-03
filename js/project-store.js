@@ -45,6 +45,26 @@
         transaction.onabort = () => reject(transaction.error || new Error('项目保存被中断。'));
       });
     }
+    remove(id, replacement = null) {
+      if (replacement && (!replacement.id || replacement.id === id)) return Promise.reject(new Error('替代项目必须使用新的 ID。'));
+      if (!this.db) {
+        if (replacement && this.memory.has(replacement.id)) return Promise.reject(new Error('替代项目已存在。'));
+        const saved = replacement && copy(replacement);
+        if (saved) this.memory.set(saved.id, saved);
+        this.memory.delete(id);
+        return Promise.resolve();
+      }
+      return new Promise((resolve, reject) => {
+        const transaction = this.db.transaction('projects', 'readwrite');
+        const projects = transaction.objectStore('projects');
+        // Keep creating the last project's replacement and deleting its audio atomic.
+        if (replacement) projects.add(replacement);
+        projects.delete(id);
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error || new Error('项目删除失败。'));
+        transaction.onabort = () => reject(transaction.error || new Error('项目删除被中断。'));
+      });
+    }
   }
   if (typeof module === 'object' && module.exports) module.exports = ProjectStore;
   else root.AudioCutterProjectStore = ProjectStore;

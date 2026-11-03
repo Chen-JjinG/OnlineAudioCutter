@@ -1,6 +1,6 @@
 {
   "name": "online-audio-cutter",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "private": true,
   "description": "Browser-local audio clipping with WAV, MP3 and Ogg Vorbis export.",
   "scripts": {

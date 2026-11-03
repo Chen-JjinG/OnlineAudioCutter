@@ -17,6 +17,7 @@
     worker: null, requestId: 0, exportJob: null, resultUrl: null, toastTimer: 0,
     project: null, store: new window.AudioCutterProjectStore(), projectBusy: true, hydrating: false,
     saveTimer: 0, saveQueue: Promise.resolve(), saveRevision: 0, renameTargets: [], focusLayout: null,
+    deleteTarget: null, deletingProjectId: null,
   };
   const formats = {
     wav: { label: '位深', description: '无损 PCM，适合后期制作与音频存档。', options: [['16', '16 bit · 标准'], ['24', '24 bit · 高精度'], ['32', '32 bit float · 浮点']], default: '16' },
@@ -83,7 +84,10 @@
     const projects = await state.store.list();
     const fragment = document.createDocumentFragment();
     for (const project of projects) {
+      const row = document.createElement('div');
+      row.className = 'project-row';
       const button = document.createElement('button');
+      button.type = 'button';
       button.className = `project-item${project.id === state.project?.id ? ' active' : ''}`;
       button.dataset.projectId = project.id;
       button.setAttribute('aria-current', String(project.id === state.project?.id));
@@ -93,7 +97,16 @@
       detail.textContent = `${project.clips?.length || 0} 个片段 · ${project.sourceName || '空白项目'}`;
       button.append(title, detail);
       button.addEventListener('click', () => openProject(project.id).catch((error) => showError(error.message)));
-      fragment.append(button);
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'icon-button project-delete';
+      remove.disabled = button.disabled;
+      remove.title = `删除项目：${project.name}`;
+      remove.setAttribute('aria-label', remove.title);
+      remove.innerHTML = '<svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>';
+      remove.addEventListener('click', () => showDeleteProject(project));
+      row.append(button, remove);
+      fragment.append(row);
     }
     $('project-list').replaceChildren(fragment);
   }
@@ -118,7 +131,7 @@
 
   function saveCurrentProject() {
     clearTimeout(state.saveTimer);
-    if (!state.project || state.hydrating || state.loading) return state.saveQueue;
+    if (!state.project || state.hydrating || state.loading || state.project.id === state.deletingProjectId) return state.saveQueue;
     const record = projectRecord(), revision = ++state.saveRevision;
     projectStatus('保存中…', true);
     const operation = state.saveQueue.then(() => state.store.put(record));
@@ -170,6 +183,17 @@
     return { id, name: name.trim().slice(0, 80) || '未命名项目', createdAt: Date.now(), updatedAt: Date.now(), audio: null, sourceName: '', clips: [], settings: { format: 'wav', quality: '16', sampleRate: '0', channels: '0', fade: '0' } };
   }
 
+  async function activateProject(project) {
+    state.hydrating = true;
+    clearAudio();
+    state.project = { ...project };
+    updateProjectHeading();
+    applySettings(project.settings);
+    if (project.audio) await loadFile(new File([project.audio], project.sourceName || 'audio.wav', { type: project.mimeType || project.audio.type }), project);
+    try { localStorage.setItem('vvcat-cutter-project', project.id); } catch (_) {}
+    projectStatus(state.store.persistent ? '已保存' : '会话保存');
+  }
+
   async function openProject(id) {
     if (id === state.project?.id || state.projectBusy || state.loading || state.exportJob) return;
     state.projectBusy = true; updateControls();
@@ -177,14 +201,7 @@
       await saveCurrentProject();
       const project = await state.store.get(id);
       if (!project) throw new Error('没有找到这个本地项目。');
-      state.hydrating = true;
-      clearAudio();
-      state.project = { ...project };
-      updateProjectHeading();
-      applySettings(project.settings);
-      if (project.audio) await loadFile(new File([project.audio], project.sourceName || 'audio.wav', { type: project.mimeType || project.audio.type }), project);
-      try { localStorage.setItem('vvcat-cutter-project', project.id); } catch (_) {}
-      projectStatus(state.store.persistent ? '已保存' : '会话保存');
+      await activateProject(project);
       toast(`已打开项目：${project.name}`);
     } finally {
       state.projectBusy = false; state.hydrating = false;
@@ -248,6 +265,51 @@
     } finally {
       state.projectBusy = false; $('create-project-submit').disabled = false;
       updateControls(); await renderProjectList();
+    }
+  }
+
+  function showDeleteProject(project) {
+    if (state.projectBusy || state.loading || state.exportJob) return;
+    state.deleteTarget = { id: project.id, name: project.id === state.project?.id ? state.project.name : project.name };
+    $('delete-project-name').textContent = state.deleteTarget.name;
+    $('project-delete-error').hidden = true;
+    $('delete-project-dialog').showModal();
+    $('cancel-delete-project').focus();
+  }
+
+  async function deleteProject(event) {
+    event.preventDefault();
+    if (!state.deleteTarget || state.projectBusy || state.loading || state.exportJob) return;
+    const target = state.deleteTarget;
+    const deletingCurrent = target.id === state.project?.id;
+    let removed = false;
+    state.projectBusy = true;
+    state.deletingProjectId = target.id;
+    clearTimeout(state.saveTimer);
+    updateControls();
+    for (const button of $('delete-project-dialog').querySelectorAll('button')) button.disabled = true;
+    try {
+      // Drain queued autosaves before removal; never save the deleted current project again.
+      if (deletingCurrent) await state.saveQueue;
+      else await saveCurrentProject();
+      const remaining = (await state.store.list()).filter((project) => project.id !== target.id);
+      const replacement = remaining.length ? null : newProjectRecord('未命名项目');
+      await state.store.remove(target.id, replacement);
+      removed = true;
+      if (deletingCurrent) {
+        ++state.saveRevision;
+        await activateProject(remaining[0] || replacement);
+      }
+      $('delete-project-dialog').close();
+      toast(`已删除项目：${target.name}${deletingCurrent ? (replacement ? '，已创建空白项目。' : '，已切换至其他项目。') : ''}`);
+    } catch (error) {
+      $('project-delete-error').textContent = `无法删除项目：${error.message}`;
+      $('project-delete-error').hidden = false;
+    } finally {
+      state.deletingProjectId = null; state.projectBusy = false; state.hydrating = false;
+      for (const button of $('delete-project-dialog').querySelectorAll('button')) button.disabled = false;
+      updateControls(); await renderProjectList();
+      if (!removed) scheduleProjectSave();
     }
   }
 
@@ -1076,6 +1138,9 @@
   function setupEvents() {
     for (const id of ['project-new', 'header-new']) $(id).addEventListener('click', showNewProject);
     $('new-project-form').addEventListener('submit', createProject);
+    $('delete-project-form').addEventListener('submit', deleteProject);
+    $('delete-project-dialog').addEventListener('cancel', (event) => { if (state.deletingProjectId) event.preventDefault(); });
+    $('delete-project-dialog').addEventListener('close', () => { state.deleteTarget = null; });
     $('project-save').addEventListener('click', () => saveCurrentProject().then(() => toast('项目已保存。')).catch(() => {}));
     $('project-name').addEventListener('input', () => {
       if (!state.project) return;

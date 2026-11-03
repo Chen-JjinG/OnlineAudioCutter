@@ -40,3 +40,38 @@ test('project store fallback keeps projects, audio, and edits isolated across sw
   restored.name = '读取结果也应独立';
   assert.equal((await store.get('first')).name, '刀剑音效');
 });
+
+test('deleting one project removes its audio and clips while preserving other projects', async () => {
+  const store = await new ProjectStore().open();
+  const keep = { id: 'keep', name: '保留的项目', audio: new Blob(['keep-audio']), clips: [{ name: '001' }], updatedAt: 1 };
+  await store.put(keep);
+  await store.put({ id: 'remove', audio: new Blob(['remove-audio']), clips: [{ name: '002' }], updatedAt: 2 });
+  await store.remove('remove');
+  assert.equal(await store.get('remove'), null);
+  assert.deepEqual((await store.list()).map(project => project.id), ['keep']);
+  const restored = await store.get('keep');
+  assert.equal(await restored.audio.text(), 'keep-audio');
+  assert.deepEqual(restored.clips, keep.clips);
+  await store.remove('already-missing');
+  assert.equal((await store.list()).length, 1);
+});
+
+test('deleting the last project can replace it without retaining deleted data', async () => {
+  const store = await new ProjectStore().open();
+  await store.put({ id: 'old', audio: new Blob(['old-audio']), clips: [{ name: 'old-clip' }], updatedAt: 1 });
+  const blank = { id: 'new', name: '未命名项目', audio: null, clips: [], updatedAt: 2 };
+  await store.remove('old', blank);
+  blank.name = '外部修改';
+  assert.equal(await store.get('old'), null);
+  assert.deepEqual(await store.list(), [{ id: 'new', name: '未命名项目', audio: null, clips: [], updatedAt: 2 }]);
+});
+
+test('invalid replacement cannot destroy either the target or an existing project', async () => {
+  const store = await new ProjectStore().open();
+  await store.put({ id: 'old', name: '旧项目', updatedAt: 1 });
+  await store.put({ id: 'existing', name: '保留项目', updatedAt: 2 });
+  await assert.rejects(store.remove('old', { id: 'old' }), /新的 ID/);
+  await assert.rejects(store.remove('old', { id: 'existing' }), /已存在/);
+  assert.equal((await store.get('old')).name, '旧项目');
+  assert.equal((await store.get('existing')).name, '保留项目');
+});
