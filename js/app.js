@@ -8,12 +8,15 @@
     zoom: $('zoom-slider'), quality: $('export-quality'), sampleRate: $('export-samplerate'),
     channels: $('export-channels'), fade: $('export-fade'), export: $('btn-export'),
   };
+  const projectCore = window.AudioCutterProjectCore;
   const state = {
     wave: null, regions: null, minimap: null, buffer: null, file: null, loadId: 0,
     ready: false, loading: false, selectedId: null, metadata: new Map(), rows: new Map(),
     history: [], historyIndex: -1, restoring: false, clipSequence: 0,
     loop: false, previewId: null, zoomFrame: 0, timelineFrame: 0, uiFrame: 0,
     worker: null, requestId: 0, exportJob: null, resultUrl: null, toastTimer: 0,
+    project: null, store: new window.AudioCutterProjectStore(), projectBusy: true, hydrating: false,
+    saveTimer: 0, saveQueue: Promise.resolve(), saveRevision: 0, renameTargets: [], focusLayout: null,
   };
   const formats = {
     wav: { label: '位深', description: '无损 PCM，适合后期制作与音频存档。', options: [['16', '16 bit · 标准'], ['24', '24 bit · 高精度'], ['32', '32 bit float · 浮点']], default: '16' },
@@ -41,6 +44,257 @@
 
   function fileStem(name) { return name.replace(/\.[^.]+$/, '') || 'audio'; }
 
+  function currentSettings() {
+    return { format: getFormat(), quality: ui.quality.value, sampleRate: ui.sampleRate.value, channels: ui.channels.value, fade: ui.fade.value };
+  }
+
+  function applySettings(settings = {}) {
+    const format = formats[settings.format] ? settings.format : 'wav';
+    document.querySelector(`input[name="format"][value="${format}"]`).checked = true;
+    const config = formats[format];
+    $('quality-label').textContent = config.label;
+    $('format-description').textContent = config.description;
+    ui.quality.replaceChildren(...config.options.map(([value, label]) => new Option(label, value)));
+    ui.quality.value = config.options.some(([value]) => value === String(settings.quality)) ? String(settings.quality) : config.default;
+    qualityValues[format] = ui.quality.value;
+    for (const [select, value] of [[ui.sampleRate, settings.sampleRate], [ui.channels, settings.channels], [ui.fade, settings.fade]]) {
+      select.value = [...select.options].some((option) => option.value === String(value)) ? String(value) : '0';
+    }
+    updateSummary();
+  }
+
+  function projectStatus(text, saving = false) {
+    $('project-save-state').textContent = text;
+    $('project-save-state').classList.toggle('saving', saving);
+  }
+
+  function updateProjectHeading() {
+    const name = state.project?.name || '未命名项目';
+    if (document.activeElement !== $('project-name')) $('project-name').value = name;
+    $('sidebar-filename').textContent = name;
+    $('sidebar-filename').title = name;
+    $('sidebar-file-info').textContent = state.file?.name || '尚未导入音频';
+    $('sidebar-file-info').title = state.file?.name || '';
+    $('session-status').textContent = `${name}  /  ${state.store.persistent ? '本地自动保存' : '本次会话保存'}`;
+    document.title = `${name} · VVcat Audio Cutter`;
+  }
+
+  async function renderProjectList() {
+    const projects = await state.store.list();
+    const fragment = document.createDocumentFragment();
+    for (const project of projects) {
+      const button = document.createElement('button');
+      button.className = `project-item${project.id === state.project?.id ? ' active' : ''}`;
+      button.dataset.projectId = project.id;
+      button.setAttribute('aria-current', String(project.id === state.project?.id));
+      button.disabled = state.projectBusy || state.loading || !!state.exportJob;
+      const title = document.createElement('strong'), detail = document.createElement('small');
+      title.textContent = project.name;
+      detail.textContent = `${project.clips?.length || 0} 个片段 · ${project.sourceName || '空白项目'}`;
+      button.append(title, detail);
+      button.addEventListener('click', () => openProject(project.id).catch((error) => showError(error.message)));
+      fragment.append(button);
+    }
+    $('project-list').replaceChildren(fragment);
+  }
+
+  function projectRecord() {
+    if (!state.project) return null;
+    return {
+      ...state.project, updatedAt: Date.now(), audio: state.file,
+      sourceName: state.file?.name || '', mimeType: state.file?.type || '',
+      clips: state.ready ? JSON.parse(snapshot()) : [], settings: currentSettings(),
+      selectedId: state.selectedId, playhead: state.wave?.getCurrentTime() || 0,
+      zoom: Number(ui.zoom.value), clipSequence: state.clipSequence, loop: state.loop,
+    };
+  }
+
+  function scheduleProjectSave() {
+    if (!state.project || state.hydrating || state.projectBusy || state.loading) return;
+    clearTimeout(state.saveTimer);
+    projectStatus('未保存', true);
+    state.saveTimer = setTimeout(() => saveCurrentProject().catch(() => {}), 600);
+  }
+
+  function saveCurrentProject() {
+    clearTimeout(state.saveTimer);
+    if (!state.project || state.hydrating || state.loading) return state.saveQueue;
+    const record = projectRecord(), revision = ++state.saveRevision;
+    projectStatus('保存中…', true);
+    const operation = state.saveQueue.then(() => state.store.put(record));
+    state.saveQueue = operation.catch(() => {});
+    return operation.then(async () => {
+      if (state.project?.id === record.id && revision === state.saveRevision) {
+        projectStatus(state.store.persistent ? '已保存' : '会话保存');
+        updateProjectHeading();
+      }
+      await renderProjectList();
+    }).catch((error) => {
+      projectStatus('保存失败', true);
+      showError(`项目保存失败：${error.message || '浏览器存储空间可能不足。'} 请保留当前页面并先导出音频。`);
+      throw error;
+    });
+  }
+
+  function clearAudio() {
+    ++state.loadId;
+    stopPreview();
+    cancelAnimationFrame(state.zoomFrame);
+    state.zoomFrame = 0;
+    state.wave?.destroy();
+    state.wave = state.regions = state.minimap = null;
+    state.ready = false;
+    state.loading = false;
+    state.buffer = state.file = null;
+    state.selectedId = null;
+    state.metadata.clear();
+    state.rows.clear();
+    state.history = []; state.historyIndex = -1; state.clipSequence = 0;
+    state.loop = false;
+    $('btn-loop').setAttribute('aria-pressed', 'false');
+    ui.tbody.replaceChildren();
+    $('timeline').replaceChildren();
+    $('wave-placeholder').hidden = false;
+    $('overview').hidden = true;
+    $('current-time').textContent = $('total-time').textContent = '00:00.000';
+    $('duration-badge').textContent = '等待导入';
+    ui.sampleRate.options[0].textContent = '跟随项目';
+    ui.channels.options[0].textContent = '保留原声道';
+    ui.zoom.value = '0';
+    resetResult(); showError(''); syncPlayback();
+    setLoading(false); selectRegion(null); renderClips(); updateProjectHeading();
+  }
+
+  function newProjectRecord(name) {
+    const id = window.crypto?.randomUUID?.() || `project-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    return { id, name: name.trim().slice(0, 80) || '未命名项目', createdAt: Date.now(), updatedAt: Date.now(), audio: null, sourceName: '', clips: [], settings: { format: 'wav', quality: '16', sampleRate: '0', channels: '0', fade: '0' } };
+  }
+
+  async function openProject(id) {
+    if (id === state.project?.id || state.projectBusy || state.loading || state.exportJob) return;
+    state.projectBusy = true; updateControls();
+    try {
+      await saveCurrentProject();
+      const project = await state.store.get(id);
+      if (!project) throw new Error('没有找到这个本地项目。');
+      state.hydrating = true;
+      clearAudio();
+      state.project = { ...project };
+      updateProjectHeading();
+      applySettings(project.settings);
+      if (project.audio) await loadFile(new File([project.audio], project.sourceName || 'audio.wav', { type: project.mimeType || project.audio.type }), project);
+      try { localStorage.setItem('vvcat-cutter-project', project.id); } catch (_) {}
+      projectStatus(state.store.persistent ? '已保存' : '会话保存');
+      toast(`已打开项目：${project.name}`);
+    } finally {
+      state.projectBusy = false; state.hydrating = false;
+      updateControls(); await renderProjectList();
+    }
+  }
+
+  async function initializeProjects() {
+    try {
+      await state.store.open();
+      const projects = await state.store.list();
+      let lastId;
+      try { lastId = localStorage.getItem('vvcat-cutter-project'); } catch (_) {}
+      const project = projects.find((p) => p.id === lastId) || projects[0] || newProjectRecord('未命名项目');
+      if (!projects.length) await state.store.put(project);
+      state.hydrating = true;
+      state.project = { ...project };
+      updateProjectHeading();
+      applySettings(project.settings);
+      if (project.audio) await loadFile(new File([project.audio], project.sourceName || 'audio.wav', { type: project.mimeType || project.audio.type }), project);
+      try { localStorage.setItem('vvcat-cutter-project', project.id); } catch (_) {}
+      $('storage-note').textContent = state.store.persistent ? '音频与项目保存在当前浏览器。' : '浏览器未提供持久存储，仅本次会话保留。';
+      projectStatus(state.store.persistent ? '已保存' : '会话保存');
+    } catch (error) {
+      showError(`项目初始化失败：${error.message}`);
+    } finally {
+      state.hydrating = false; state.projectBusy = false;
+      updateControls(); await renderProjectList();
+    }
+  }
+
+  function showNewProject() {
+    if (state.projectBusy || state.loading || state.exportJob) return;
+    $('new-project-name').value = '未命名项目';
+    $('project-create-error').hidden = true;
+    $('project-storage-description').textContent = state.store.persistent ? '当前项目会先保存。每个项目独立保留音频、片段与导出设置，可在左侧切换。' : '当前项目会在本次会话中保留；浏览器未提供持久存储，关闭页面后无法恢复。';
+    $('new-project-dialog').showModal();
+    $('new-project-name').select();
+  }
+
+  async function createProject(event) {
+    event.preventDefault();
+    if (state.projectBusy || state.loading || state.exportJob) return;
+    $('create-project-submit').disabled = true;
+    state.projectBusy = true; updateControls();
+    try {
+      await saveCurrentProject();
+      const project = newProjectRecord($('new-project-name').value);
+      await state.store.put(project);
+      clearAudio();
+      state.project = project;
+      applySettings(project.settings);
+      updateProjectHeading();
+      try { localStorage.setItem('vvcat-cutter-project', project.id); } catch (_) {}
+      projectStatus(state.store.persistent ? '已保存' : '会话保存');
+      $('new-project-dialog').close();
+      toast(`已创建项目：${project.name}`);
+    } catch (error) {
+      $('project-create-error').textContent = `无法创建项目：${error.message}`;
+      $('project-create-error').hidden = false;
+    } finally {
+      state.projectBusy = false; $('create-project-submit').disabled = false;
+      updateControls(); await renderProjectList();
+    }
+  }
+
+  function renameOptions() {
+    return { prefix: $('rename-prefix').value, start: $('rename-start').value, digits: $('rename-digits').value, separator: $('rename-separator').value };
+  }
+
+  function renamePreview() {
+    try {
+      const names = projectCore.batchNames(state.renameTargets, renameOptions());
+      $('rename-preview-list').replaceChildren(...names.slice(0, 4).map(({ name }) => { const li = document.createElement('li'); li.textContent = name; return li; }));
+      $('rename-preview-note').textContent = names.length > 4 ? `…共 ${names.length} 个片段。导出时自动添加所选格式的扩展名。` : '导出时自动添加所选格式的扩展名。';
+      $('rename-error').hidden = true;
+      $('apply-batch-rename').disabled = !names.length;
+    } catch (error) {
+      $('rename-error').textContent = error.message; $('rename-error').hidden = false;
+      $('apply-batch-rename').disabled = true;
+    }
+  }
+
+  function showBatchRename() {
+    if (!state.ready || state.loading) return;
+    state.renameTargets = getRegions().filter((r) => getMeta(r.id)?.checked).map((r) => ({ id: r.id }));
+    if (!state.renameTargets.length) return;
+    $('rename-selection-count').textContent = `修改 ${state.renameTargets.length} 个已勾选片段，按列表时间顺序编号。整次批量命名可以一键撤销。`;
+    renamePreview();
+    $('batch-rename-dialog').showModal();
+    $('rename-prefix').select();
+  }
+
+  function applyBatchRename(event) {
+    event.preventDefault();
+    try {
+      const names = projectCore.batchNames(state.renameTargets, renameOptions());
+      for (const { id, name } of names) {
+        const meta = getMeta(id), region = getRegion(id);
+        if (!meta || !region) continue;
+        meta.name = name; region.setContent(name);
+      }
+      commitHistory(); renderClips();
+      $('batch-rename-dialog').close();
+      toast(`已批量命名 ${names.length} 个片段。`);
+    } catch (error) {
+      $('rename-error').textContent = error.message; $('rename-error').hidden = false;
+    }
+  }
+
   function toast(message, error = false) {
     clearTimeout(state.toastTimer);
     $('toast').textContent = message;
@@ -63,6 +317,7 @@
 
   function pickFile() {
     if (state.exportJob) return toast('请先完成或取消当前导出。');
+    if (state.projectBusy) return toast('项目正在加载，请稍候。');
     ui.upload.click();
   }
 
@@ -93,8 +348,9 @@
     return 44100;
   }
 
-  async function loadFile(file) {
+  async function loadFile(file, restoredProject = null) {
     if (!file || state.exportJob) return;
+    if (state.projectBusy && !restoredProject) return toast('项目正在加载，请稍候。');
     if (!file.size) return showError('这个文件是空的，请重新选择音频。');
     const id = ++state.loadId;
     setLoading(true);
@@ -133,19 +389,33 @@
       $('wave-placeholder').hidden = true;
       $('overview').hidden = false;
       $('file-name').textContent = file.name;
-      $('sidebar-filename').textContent = file.name;
-      $('sidebar-filename').title = file.name;
       $('file-meta').textContent = `${formatBytes(file.size)}  ·  ${formatTime(buffer.duration, false)}  ·  项目 ${buffer.sampleRate / 1000} kHz  ·  ${buffer.numberOfChannels === 1 ? '单声道' : `${buffer.numberOfChannels} 声道`}`;
-      $('sidebar-file-info').textContent = `${formatTime(buffer.duration, false)} · ${formatBytes(file.size)}`;
+      updateProjectHeading();
       $('total-time').textContent = formatTime(buffer.duration);
       $('duration-badge').textContent = formatTime(buffer.duration, false);
       ui.channels.options[0].textContent = buffer.numberOfChannels > 2 ? '自动 · 立体声混音' : `保留原声道 · ${buffer.numberOfChannels === 1 ? '单声道' : '立体声'}`;
       ui.sampleRate.options[0].textContent = `跟随项目 · ${buffer.sampleRate / 1000} kHz`;
       ui.zoom.value = '0';
       fitWaveform();
+      if (restoredProject) {
+        state.restoring = true;
+        try {
+          for (const clip of projectCore.validClips(restoredProject.clips, buffer.duration)) {
+            state.metadata.set(clip.id, { name: clip.name, checked: clip.checked });
+            state.regions.addRegion({ id: clip.id, start: clip.start, end: clip.end, minLength: Math.min(.01, buffer.duration), color: 'rgba(255,152,72,0.12)' });
+          }
+          state.clipSequence = Math.max(restoredProject.clipSequence || 0, state.metadata.size);
+          applySettings(restoredProject.settings);
+          selectRegion(getRegion(restoredProject.selectedId) ? restoredProject.selectedId : null);
+          state.loop = !!restoredProject.loop;
+          $('btn-loop').setAttribute('aria-pressed', String(state.loop));
+          state.wave.setTime(clamp(Number(restoredProject.playhead) || 0, 0, buffer.duration));
+          if (restoredProject.zoom) requestAnimationFrame(() => { if (state.wave === wave && state.ready) setZoom(clamp(Number(restoredProject.zoom) || 0, 0, 100)); });
+        } finally { state.restoring = false; }
+      }
       commitHistory();
       renderClips();
-      toast('音频已就绪。拖拽波形即可创建片段。');
+      if (!restoredProject) toast('音频已就绪。拖拽波形即可创建片段。');
     } catch (error) {
       if (id !== state.loadId) return;
       console.error('Audio import failed', error);
@@ -164,7 +434,7 @@
       }
       showError('无法读取这份音频。请确认文件未损坏，或换用浏览器支持的 WAV、MP3、OGG、M4A 等格式。');
     } finally {
-      if (id === state.loadId) setLoading(false);
+      if (id === state.loadId) { setLoading(false); if (state.ready && !restoredProject) scheduleProjectSave(); }
     }
   }
 
@@ -179,16 +449,16 @@
     });
     wave.setVolume(Number($('volume-slider').value));
     const regions = state.regions = wave.registerPlugin(WaveSurfer.Regions.create());
-    regions.enableDragSelection({ color: 'rgba(14,146,117,0.12)', minLength: Math.min(0.01, state.buffer.duration) });
+    regions.enableDragSelection({ color: 'rgba(255,152,72,0.12)', minLength: Math.min(0.01, state.buffer.duration) });
     state.minimap = wave.registerPlugin(WaveSurfer.Minimap.create({
       container: '#minimap', height: 34, waveColor: colors.getPropertyValue('--wave').trim(),
-      progressColor: colors.getPropertyValue('--wave-progress').trim(), overlayColor: 'rgba(14,146,117,0.12)',
+      progressColor: colors.getPropertyValue('--wave-progress').trim(), overlayColor: 'rgba(255,152,72,0.12)',
       barWidth: 1, barGap: 1, interact: false,
     }));
     regions.on('region-created', (region) => {
       if (!state.metadata.has(region.id)) {
         state.clipSequence++;
-        state.metadata.set(region.id, { name: `${fileStem(state.file.name)}_${String(state.clipSequence).padStart(2, '0')}`, checked: true });
+        state.metadata.set(region.id, { name: `${fileStem(state.file.name)}_${String(state.clipSequence).padStart(3, '0')}`, checked: true });
       }
       region.setContent(getMeta(region.id).name);
       if (state.restoring) return;
@@ -217,6 +487,7 @@
     wave.on('play', syncPlayback);
     wave.on('pause', () => {
       syncPlayback();
+      if (!state.previewId || !state.loop) scheduleProjectSave();
       const region = getRegion(state.previewId);
       if (state.loop && region && wave.getCurrentTime() >= region.end - 0.035) {
         const id = region.id;
@@ -265,9 +536,9 @@
   function selectRegion(id) {
     const old = getRegion(state.selectedId);
     state.selectedId = id;
-    if (old && old.id !== id) old.setOptions({ color: 'rgba(14,146,117,0.08)' });
+    if (old && old.id !== id) old.setOptions({ color: 'rgba(255,152,72,0.08)' });
     const selected = getRegion(id);
-    selected?.setOptions({ color: 'rgba(14,146,117,0.20)' });
+    selected?.setOptions({ color: 'rgba(255,152,72,0.24)' });
     for (const [key, row] of state.rows) row.classList.toggle('selected-row', key === id);
     $('selection-hint').textContent = selected ? `已选片段 · ${(selected.end - selected.start).toFixed(3)} 秒` : state.ready ? '在波形空白处拖拽，创建新片段' : '导入音频后，即可框选片段';
   }
@@ -285,6 +556,7 @@
     if (state.history.length > 80) state.history.shift();
     state.historyIndex = state.history.length - 1;
     updateControls();
+    scheduleProjectSave();
   }
 
   function restoreHistory(offset) {
@@ -298,12 +570,12 @@
       const entries = JSON.parse(state.history[target]);
       for (const item of entries) {
         state.metadata.set(item.id, { name: item.name, checked: item.checked });
-        state.regions.addRegion({ id: item.id, start: item.start, end: item.end, minLength: Math.min(.01, state.buffer.duration), color: 'rgba(14,146,117,0.08)' });
+        state.regions.addRegion({ id: item.id, start: item.start, end: item.end, minLength: Math.min(.01, state.buffer.duration), color: 'rgba(255,152,72,0.08)' });
       }
       state.historyIndex = target;
       selectRegion(entries.some((e) => e.id === state.selectedId) ? state.selectedId : entries.at(-1)?.id || null);
       renderClips();
-    } finally { state.restoring = false; updateControls(); }
+    } finally { state.restoring = false; updateControls(); scheduleProjectSave(); }
   }
 
   function makeRow(region) {
@@ -401,7 +673,7 @@
     if (!state.ready || state.loading) return;
     const duration = state.buffer.duration;
     const start = Math.min(state.wave.getCurrentTime(), Math.max(0, duration - Math.min(5, duration)));
-    state.regions.addRegion({ start, end: Math.min(duration, start + 5), minLength: Math.min(.01, duration), color: 'rgba(14,146,117,0.2)' });
+    state.regions.addRegion({ start, end: Math.min(duration, start + 5), minLength: Math.min(.01, duration), color: 'rgba(255,152,72,0.24)' });
   }
 
   function deleteRegion(id) {
@@ -426,6 +698,8 @@
   function updateSummary() {
     const regions = getRegions();
     const checked = regions.filter((r) => getMeta(r.id)?.checked);
+    $('btn-batch-rename').disabled = !state.ready || state.loading || state.projectBusy || !!state.exportJob || !checked.length;
+    $('batch-rename-label').textContent = checked.length ? `批量命名 (${checked.length})` : '批量命名';
     const clips = getExportClips();
     ui.checkAll.checked = regions.length > 0 && checked.length === regions.length;
     ui.checkAll.indeterminate = checked.length > 0 && checked.length < regions.length;
@@ -442,7 +716,7 @@
     $('export-size').textContent = state.buffer && clips.length ? `${format !== 'wav' ? '约 ' : ''}${formatBytes(bytes)}` : '—';
     $('export-button-label').textContent = state.exportJob ? '正在导出…' : clips.length > 1 ? `导出 ${clips.length} 个片段 · ZIP` : `导出 ${format.toUpperCase()} 音频`;
     $('export-footnote').textContent = clips.length > 1 ? '多个片段自动打包为一个 ZIP 文件。' : '音频在本地编码，无需等待上传。';
-    ui.export.disabled = !state.ready || state.loading || !!state.exportJob || clips.length === 0;
+    ui.export.disabled = !state.ready || state.loading || state.projectBusy || !!state.exportJob || clips.length === 0;
   }
 
   function scheduleSummary() {
@@ -459,11 +733,15 @@
   }
 
   function updateControls() {
-    const enabled = state.ready && !state.loading;
+    const enabled = state.ready && !state.loading && !state.projectBusy;
+    document.documentElement.dataset.projectBusy = String(state.loading || state.projectBusy);
     for (const id of ['btn-play-pause', 'btn-rewind', 'btn-loop', 'btn-add-clip', 'btn-fit', 'btn-zoom-in', 'btn-zoom-out', 'zoom-slider']) $(id).disabled = !enabled;
     ui.undo.disabled = !enabled || state.historyIndex <= 0;
     ui.redo.disabled = !enabled || state.historyIndex >= state.history.length - 1;
     $('btn-clear-clips').disabled = !enabled || getRegions().length === 0;
+    const projectLocked = state.projectBusy || state.loading || !!state.exportJob;
+    for (const id of ['project-new', 'header-new', 'project-save', 'project-name', 'sidebar-import', 'header-import', 'drop-import', 'replace-file', 'demo-audio']) $(id).disabled = projectLocked;
+    for (const button of $('project-list').querySelectorAll('button')) button.disabled = projectLocked;
     updateSummary();
   }
 
@@ -496,6 +774,7 @@
       wave.zoom(scale);
       wave.setScroll(Math.max(0, anchorTime * scale - anchor));
       scheduleTimeline();
+      scheduleProjectSave();
     });
   }
 
@@ -720,8 +999,8 @@
     document.documentElement.dataset.theme = theme;
     $('theme-label').textContent = theme === 'dark' ? '切换浅色模式' : '切换深色模式';
     $('theme-toggle').setAttribute('aria-label', $('theme-label').textContent);
-    document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#212121' : '#ffffff';
-    try { localStorage.setItem('audio-cutter-theme', theme); } catch (_) { /* Private browser storage is optional. */ }
+    document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#292b2e' : '#bfc3c7';
+    try { localStorage.setItem('vvcat-cutter-theme', theme); } catch (_) { /* Private browser storage is optional. */ }
     if (state.wave) {
       const colors = getComputedStyle(document.documentElement);
       state.wave.setOptions({ waveColor: colors.getPropertyValue('--wave').trim(), progressColor: colors.getPropertyValue('--wave-progress').trim(), cursorColor: colors.getPropertyValue('--accent').trim() });
@@ -738,11 +1017,46 @@
     $('sidebar-toggle').setAttribute('aria-label', collapsed ? '展开侧栏' : '收起侧栏');
     $('sidebar-toggle').title = `${collapsed ? '展开侧栏' : '收起侧栏'} · Ctrl/⌘ + \\`;
     try { localStorage.setItem('audio-cutter-sidebar', collapsed ? 'collapsed' : 'expanded'); } catch (_) { /* Optional preference. */ }
+    syncLayoutChrome();
     scheduleTimeline();
   }
 
+  function applyExportSidebar(collapsed) {
+    const panel = $('export-panel');
+    if (collapsed && panel.contains(document.activeElement)) $('export-sidebar-toggle').focus();
+    document.documentElement.dataset.exportSidebar = collapsed ? 'collapsed' : 'expanded';
+    panel.inert = collapsed;
+    panel.setAttribute('aria-hidden', String(collapsed));
+    $('export-sidebar-toggle').setAttribute('aria-expanded', String(!collapsed));
+    $('export-sidebar-toggle').setAttribute('aria-label', collapsed ? '展开导出侧栏' : '收起导出侧栏');
+    $('export-sidebar-toggle').title = `${collapsed ? '展开' : '收起'}导出侧栏 · Ctrl/⌘ + Shift + \\`;
+    try { localStorage.setItem('vvcat-cutter-export-sidebar', collapsed ? 'collapsed' : 'expanded'); } catch (_) {}
+    syncLayoutChrome(); scheduleTimeline();
+  }
+
+  function syncLayoutChrome() {
+    const left = document.documentElement.dataset.sidebar === 'collapsed';
+    const right = document.documentElement.dataset.exportSidebar === 'collapsed';
+    $('focus-mode').setAttribute('aria-pressed', String(left && right));
+    $('focus-mode').setAttribute('aria-label', left && right ? '退出专注模式，恢复侧栏' : '专注模式，收起两侧栏');
+    $('panel-scrim').hidden = !window.matchMedia('(max-width: 900px)').matches || (left && right);
+  }
+
+  function toggleFocusMode() {
+    const left = document.documentElement.dataset.sidebar === 'collapsed';
+    const right = document.documentElement.dataset.exportSidebar === 'collapsed';
+    if (left && right) {
+      const previous = state.focusLayout || { left: false, right: false };
+      applySidebar(previous.left); applyExportSidebar(previous.right);
+      state.focusLayout = null;
+    } else {
+      state.focusLayout = { left, right };
+      applySidebar(true); applyExportSidebar(true);
+    }
+  }
+
   function loadDemo() {
-    if (state.exportJob) return;
+    if (state.exportJob || state.projectBusy) return;
     const rate = 44100, frames = rate * 8;
     const bytes = new ArrayBuffer(44 + frames * 4), v = new DataView(bytes);
     const text = (offset, value) => { for (let i = 0; i < value.length; i++) v.setUint8(offset + i, value.charCodeAt(i)); };
@@ -760,6 +1074,20 @@
   }
 
   function setupEvents() {
+    for (const id of ['project-new', 'header-new']) $(id).addEventListener('click', showNewProject);
+    $('new-project-form').addEventListener('submit', createProject);
+    $('project-save').addEventListener('click', () => saveCurrentProject().then(() => toast('项目已保存。')).catch(() => {}));
+    $('project-name').addEventListener('input', () => {
+      if (!state.project) return;
+      state.project.name = $('project-name').value.trim().slice(0, 80) || '未命名项目';
+      updateProjectHeading(); scheduleProjectSave();
+    });
+    $('project-name').addEventListener('blur', updateProjectHeading);
+    $('project-name').addEventListener('keydown', (event) => { if (event.key === 'Enter') event.target.blur(); });
+    $('btn-batch-rename').addEventListener('click', showBatchRename);
+    $('batch-rename-form').addEventListener('submit', applyBatchRename);
+    for (const id of ['rename-prefix', 'rename-start', 'rename-digits', 'rename-separator']) $(id).addEventListener('input', renamePreview);
+    for (const button of document.querySelectorAll('[data-close-dialog]')) button.addEventListener('click', () => $(button.dataset.closeDialog).close());
     for (const id of ['sidebar-import', 'header-import', 'drop-import', 'replace-file']) $(id).addEventListener('click', pickFile);
     ui.upload.addEventListener('change', () => { const file = ui.upload.files[0]; ui.upload.value = ''; loadFile(file); });
     $('demo-audio').addEventListener('click', loadDemo);
@@ -770,7 +1098,7 @@
     $('btn-add-clip').addEventListener('click', addClip);
     $('btn-clear-clips').addEventListener('click', () => { stopPreview(); state.regions?.clearRegions(); state.metadata.clear(); selectRegion(null); commitHistory(); renderClips(); });
     ui.checkAll.addEventListener('change', () => { for (const meta of state.metadata.values()) meta.checked = ui.checkAll.checked; commitHistory(); renderClips(); });
-    $('btn-loop').addEventListener('click', () => { state.loop = !state.loop; $('btn-loop').setAttribute('aria-pressed', String(state.loop)); if (!state.loop) state.previewId = null; toast(state.loop ? '循环试听已开启，点击片段播放键开始。' : '循环试听已关闭。'); });
+    $('btn-loop').addEventListener('click', () => { state.loop = !state.loop; $('btn-loop').setAttribute('aria-pressed', String(state.loop)); if (!state.loop) state.previewId = null; scheduleProjectSave(); toast(state.loop ? '循环试听已开启，点击片段播放键开始。' : '循环试听已关闭。'); });
     $('volume-slider').addEventListener('input', (event) => state.wave?.setVolume(Number(event.target.value)));
     ui.zoom.addEventListener('input', () => setZoom(Number(ui.zoom.value)));
     $('btn-zoom-in').addEventListener('click', () => setZoom(Number(ui.zoom.value) + 8));
@@ -789,13 +1117,20 @@
       ui.quality.replaceChildren(...config.options.map(([value, label]) => new Option(label, value)));
       ui.quality.value = qualityValues[format];
       updateSummary();
+      scheduleProjectSave();
     });
-    ui.quality.addEventListener('change', () => { qualityValues[getFormat()] = ui.quality.value; updateSummary(); });
-    for (const input of [ui.sampleRate, ui.channels, ui.fade]) input.addEventListener('change', updateSummary);
+    ui.quality.addEventListener('change', () => { qualityValues[getFormat()] = ui.quality.value; updateSummary(); scheduleProjectSave(); });
+    for (const input of [ui.sampleRate, ui.channels, ui.fade]) input.addEventListener('change', () => { updateSummary(); scheduleProjectSave(); });
     ui.export.addEventListener('click', exportAudio);
     $('btn-cancel-export').addEventListener('click', cancelExport);
     $('theme-toggle').addEventListener('click', () => applyTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'));
     $('sidebar-toggle').addEventListener('click', () => applySidebar(document.documentElement.dataset.sidebar !== 'collapsed'));
+    $('export-sidebar-toggle').addEventListener('click', () => applyExportSidebar(document.documentElement.dataset.exportSidebar !== 'collapsed'));
+    $('export-sidebar-close').addEventListener('click', () => applyExportSidebar(true));
+    $('sidebar-export').addEventListener('click', () => { if (window.matchMedia('(max-width: 900px)').matches) applySidebar(true); applyExportSidebar(false); });
+    $('focus-mode').addEventListener('click', toggleFocusMode);
+    $('panel-scrim').addEventListener('click', () => { applySidebar(true); applyExportSidebar(true); });
+    window.addEventListener('resize', syncLayoutChrome);
     for (const id of ['sidebar-help', 'help-button', 'shortcuts-button']) $(id).addEventListener('click', () => $('help-dialog').showModal());
     $('close-help').addEventListener('click', () => $('help-dialog').close());
     $('help-dialog').addEventListener('click', (event) => { if (event.target === $('help-dialog')) { const rect = event.target.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) event.target.close(); } });
@@ -805,13 +1140,16 @@
     window.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('drag-overlay').hidden = true; });
     window.addEventListener('drop', (event) => { if (!event.dataTransfer.files.length) return; event.preventDefault(); dragDepth = 0; $('drag-overlay').hidden = true; if (state.exportJob) return toast('请先完成或取消当前导出。'); if (event.dataTransfer.files.length > 1) toast('一次编辑一份音频，已选择第一个文件。'); loadFile(event.dataTransfer.files[0]); });
     document.addEventListener('keydown', (event) => {
-      if ($('help-dialog').open || event.isComposing || event.altKey) return;
+      if (document.querySelector('dialog[open]') || event.isComposing || event.altKey) return;
       const editable = event.target.closest('input,textarea,select,[contenteditable="true"]');
       const command = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
-      if (command && key === '\\') { event.preventDefault(); applySidebar(document.documentElement.dataset.sidebar !== 'collapsed'); return; }
+      if (command && key === '\\') { event.preventDefault(); if (event.shiftKey) applyExportSidebar(document.documentElement.dataset.exportSidebar !== 'collapsed'); else applySidebar(document.documentElement.dataset.sidebar !== 'collapsed'); return; }
+      if (command && key === 'n') { event.preventDefault(); showNewProject(); return; }
+      if (command && key === 's') { event.preventDefault(); saveCurrentProject().catch(() => {}); return; }
       if (command && key === 'o') { event.preventDefault(); pickFile(); return; }
       if (editable) return;
+      if (state.projectBusy || state.loading) return;
       if (command && key === 'z') { event.preventDefault(); restoreHistory(event.shiftKey ? 1 : -1); return; }
       if (command && key === 'y') { event.preventDefault(); restoreHistory(1); return; }
       if (command || !state.ready || state.loading) return;
@@ -833,18 +1171,22 @@
       previousHeight = height;
     });
     observer.observe($('waveform'));
-    window.addEventListener('pagehide', () => { stopPreview(); cancelExport(); state.worker?.terminate(); state.worker = null; resetResult(); });
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveCurrentProject().catch(() => {}); });
+    window.addEventListener('pagehide', () => { saveCurrentProject().catch(() => {}); stopPreview(); cancelExport(); state.worker?.terminate(); state.worker = null; resetResult(); });
   }
 
   // A real, generated audio sample makes it possible to explore every feature before importing a file.
   const demo = document.createElement('button');
   demo.id = 'demo-audio'; demo.className = 'text-button demo-button'; demo.textContent = '试用示例';
   $('dropzone').insertBefore(demo, $('drop-import'));
-  let savedTheme, savedSidebar;
-  try { savedTheme = localStorage.getItem('audio-cutter-theme'); savedSidebar = localStorage.getItem('audio-cutter-sidebar'); } catch (_) { /* Optional preference. */ }
-  applyTheme(savedTheme === 'dark' ? 'dark' : 'light');
-  applySidebar(savedSidebar === 'collapsed');
+  let savedTheme, savedSidebar, savedExportSidebar;
+  try { savedTheme = localStorage.getItem('vvcat-cutter-theme'); savedSidebar = localStorage.getItem('audio-cutter-sidebar'); savedExportSidebar = localStorage.getItem('vvcat-cutter-export-sidebar'); } catch (_) { /* Optional preference. */ }
+  const narrow = window.matchMedia('(max-width: 900px)').matches;
+  applyTheme(savedTheme === 'light' ? 'light' : 'dark');
+  applySidebar(savedSidebar ? savedSidebar === 'collapsed' : narrow);
+  applyExportSidebar(savedExportSidebar ? savedExportSidebar === 'collapsed' : narrow);
   setupEvents();
   setupOverview();
   updateControls();
+  initializeProjects();
 })();

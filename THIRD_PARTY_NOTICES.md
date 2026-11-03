@@ -28,3 +28,7 @@ Source locations:
 - https://github.com/xiph/vorbis/tree/0657aee69dec8508a0011f47f3b69d7538e9d262
 
 Follow the upstream repository's build instructions to rebuild the WASM encoders. The multi-file application loads `vendor/mp3.wasm` and `vendor/ogg.wasm` as separate, replaceable modules; replacing them and running `npm run build` regenerates the standalone HTML with those modules. The JavaScript wrapper and WASM library version strings must match.
+
+## Owner-provided branding
+
+`assets/vvcat-logo.png` is copied unchanged from the owner's [vvcat-music-radio](https://github.com/Chen-JjinG/vvcat-music-radio/blob/main/assets/logo/logo.png) repository at the owner's request. Original Git blob SHA: `43b72a31ef919acd1a874d4be96d37ded5cbff27`. It is used as the application logo and favicon; the third-party software licenses above do not relicense this artwork.

@@ -6,7 +6,7 @@ import path from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const output = path.join(root, 'dist');
 await mkdir(output, { recursive: true });
-for (const directory of ['css', 'js', 'vendor']) {
+for (const directory of ['css', 'js', 'vendor', 'assets']) {
   await rm(path.join(output, directory), { recursive: true, force: true });
   await cp(path.join(root, directory), path.join(output, directory), { recursive: true });
 }
@@ -19,7 +19,9 @@ for (const filename of ['wavesurfer.min.js', 'regions.min.js', 'minimap.min.js']
   const library = safeScript(await readFile(path.join(root, 'vendor', filename), 'utf8'));
   standalone = standalone.replace(`<script defer src="vendor/${filename}"></script>`, () => `<script>\n${library}\n</script>`);
 }
-standalone = standalone.replace('<script defer src="js/app.js"></script>', '');
+for (const filename of ['project-core.js', 'project-store.js', 'app.js']) standalone = standalone.replace(`<script defer src="js/${filename}"></script>`, '');
+const logoData = `data:image/png;base64,${(await readFile(path.join(root, 'assets/vvcat-logo.png'))).toString('base64')}`;
+standalone = standalone.replaceAll('assets/vvcat-logo.png', logoData);
 const wasm = {};
 for (const format of ['mp3', 'ogg']) wasm[format] = `data:application/wasm;base64,${(await readFile(path.join(root, 'vendor', `${format}.wasm`))).toString('base64')}`;
 const worker = [
@@ -30,7 +32,9 @@ const worker = [
 ].join('\n');
 // Escape '<' in inert JSON so HTML processors/live-reload injectors never interpret bundled JS as HTML.
 const workerJson = JSON.stringify(worker).replace(/</g, '\\u003c');
-const application = safeScript(await readFile(path.join(root, 'js/app.js'), 'utf8'));
+const applicationParts = [];
+for (const filename of ['project-core.js', 'project-store.js', 'app.js']) applicationParts.push(await readFile(path.join(root, 'js', filename), 'utf8'));
+const application = safeScript(applicationParts.join('\n'));
 const licenses = {};
 for (const filename of (await readdir(path.join(root, 'vendor/licenses'))).sort()) licenses[filename] = await readFile(path.join(root, 'vendor/licenses', filename), 'utf8');
 const noticesJson = JSON.stringify({ notice: await readFile(path.join(root, 'THIRD_PARTY_NOTICES.md'), 'utf8'), licenses }).replace(/</g, '\\u003c');
