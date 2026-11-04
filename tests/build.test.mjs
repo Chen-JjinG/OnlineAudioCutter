@@ -25,7 +25,8 @@ test('standalone embeds intact worker, WASM and application without external run
   }
   assert.ok(!/<script[^>]*\bsrc=/.test(html));
   assert.ok(!/<link[^>]*\brel="stylesheet"/.test(html));
-  assert.ok(!/src="assets\//.test(html), 'the music-site logo is embedded for offline use');
+  assert.ok(!/src="assets\//.test(html), 'both cat assets are embedded for offline use');
+  assert.ok(html.includes('AudioCutterAutoSplit'));
   assert.ok(html.includes('AudioCutterProjectCore') && html.includes('AudioCutterProjectStore'));
   const application = readFileSync(path.join(root, 'js/app.js'), 'utf8');
   assert.ok(html.includes(application));

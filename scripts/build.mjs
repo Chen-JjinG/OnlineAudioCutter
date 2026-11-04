@@ -19,9 +19,13 @@ for (const filename of ['wavesurfer.min.js', 'regions.min.js', 'minimap.min.js']
   const library = safeScript(await readFile(path.join(root, 'vendor', filename), 'utf8'));
   standalone = standalone.replace(`<script defer src="vendor/${filename}"></script>`, () => `<script>\n${library}\n</script>`);
 }
-for (const filename of ['project-core.js', 'project-store.js', 'app.js']) standalone = standalone.replace(`<script defer src="js/${filename}"></script>`, '');
-const logoData = `data:image/png;base64,${(await readFile(path.join(root, 'assets/vvcat-logo.png'))).toString('base64')}`;
-standalone = standalone.replaceAll('assets/vvcat-logo.png', logoData);
+const scripts = ['project-core.js', 'project-store.js', 'auto-split.js', 'app.js'];
+for (const filename of scripts) standalone = standalone.replace(`<script defer src="js/${filename}"></script>`, '');
+for (const filename of ['vvcat-logo.png', 'vvcat-companion.png']) {
+  const asset = `assets/${filename}`;
+  const data = `data:image/png;base64,${(await readFile(path.join(root, asset))).toString('base64')}`;
+  standalone = standalone.replaceAll(asset, data);
+}
 const wasm = {};
 for (const format of ['mp3', 'ogg']) wasm[format] = `data:application/wasm;base64,${(await readFile(path.join(root, 'vendor', `${format}.wasm`))).toString('base64')}`;
 const worker = [
@@ -33,7 +37,7 @@ const worker = [
 // Escape '<' in inert JSON so HTML processors/live-reload injectors never interpret bundled JS as HTML.
 const workerJson = JSON.stringify(worker).replace(/</g, '\\u003c');
 const applicationParts = [];
-for (const filename of ['project-core.js', 'project-store.js', 'app.js']) applicationParts.push(await readFile(path.join(root, 'js', filename), 'utf8'));
+for (const filename of scripts) applicationParts.push(await readFile(path.join(root, 'js', filename), 'utf8'));
 const application = safeScript(applicationParts.join('\n'));
 const licenses = {};
 for (const filename of (await readdir(path.join(root, 'vendor/licenses'))).sort()) licenses[filename] = await readFile(path.join(root, 'vendor/licenses', filename), 'utf8');

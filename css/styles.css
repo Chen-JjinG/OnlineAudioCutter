@@ -16,5 +16,48 @@ dialog{width:calc(100% - 30px);max-width:520px;max-height:calc(100vh - 40px);ove
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;scroll-behavior:auto!important}.spinner{animation-duration:1.5s}}
 :root[data-project-busy=true] .editing-column{pointer-events:none;opacity:.6}
 
+.history-actions{align-items:center}
+#btn-auto-split{margin-right:5px}
+.author-cat{
+  position:fixed;right:8px;bottom:calc(var(--footer) + 4px);z-index:34;
+  width:clamp(95px,10vw,146px);pointer-events:none;
+}
+.cat-figure{position:relative;display:block}
+.cat-figure img{
+  position:relative;display:block;width:100%;height:auto;
+  clip-path:inset(22% 32% 19% 26%);pointer-events:auto;cursor:grab;touch-action:none;
+}
+.cat-tail{
+  position:absolute;right:5%;bottom:36%;width:44%;
+  transform-origin:6% 72%;animation:cutter-tail-sway 4.2s ease-in-out infinite;
+}
+.cat-hint{
+  position:absolute;top:0;right:6%;z-index:1;padding:5px 8px;white-space:nowrap;
+  border:1px solid var(--accent-line);border-radius:5px 5px 5px 2px;
+  background:var(--side);color:var(--text);font-size:11px;font-weight:600;pointer-events:auto;
+}
+.cat-hint span{color:var(--accent)}
+.author-cat:hover .cat-hint,.author-cat:focus-visible .cat-hint{background:var(--hover);border-color:var(--accent)}
+.author-cat.is-dragging img{cursor:grabbing}
+.author-cat.is-listening:not(.is-dragging) .cat-figure{animation:cutter-cat-bop 1.05s ease-in-out infinite}
+.author-cat.is-listening .cat-figure::after{
+  content:"♫";position:absolute;top:34%;right:14%;color:var(--accent);font-size:16px;
+  animation:cutter-cat-note 2.1s ease-out infinite;
+}
+:root[data-focus-active=true] .author-cat{display:none}
+@media(min-width:901px){
+  :root[data-export-sidebar=expanded] .author-cat{right:calc(var(--right) + 8px)}
+}
+@media(max-width:560px){
+  #btn-auto-split{gap:4px;padding-inline:6px;font-size:10px}
+  #btn-auto-split .icon{width:12px;height:12px}
+}
+@media(prefers-reduced-motion:reduce){
+  .cat-tail,.author-cat.is-listening .cat-figure,.author-cat.is-listening .cat-figure::after{animation:none!important}
+}
+@keyframes cutter-tail-sway{0%,100%{transform:rotate(-5deg)}50%{transform:rotate(4.5deg)}}
+@keyframes cutter-cat-bop{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+@keyframes cutter-cat-note{0%{transform:translateY(8px);opacity:0}30%{opacity:1}100%{transform:translateY(-22px);opacity:0}}
+
 /* Project deletion remains visible for mouse, keyboard and touch users. */
 .project-row{position:relative;margin-bottom:3px}.project-row .project-item{margin-bottom:0;padding-right:38px;min-height:51px}.project-delete.icon-button{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:30px;height:30px;color:var(--muted)}.project-delete.icon-button:hover:not(:disabled),.project-delete.icon-button:focus-visible{color:#fff;background:#a94438;border-color:#cf776b}.button.danger{background:#ad4438;border-color:#c5685c;color:#fff}.button.danger:hover:not(:disabled){background:#c45447}.delete-project-name{margin-top:20px;padding:12px;background:var(--soft);border:1px solid var(--line);font-size:14px;font-weight:600;overflow-wrap:anywhere}

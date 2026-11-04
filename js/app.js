@@ -17,7 +17,7 @@
     worker: null, requestId: 0, exportJob: null, resultUrl: null, toastTimer: 0,
     project: null, store: new window.AudioCutterProjectStore(), projectBusy: true, hydrating: false,
     saveTimer: 0, saveQueue: Promise.resolve(), saveRevision: 0, renameTargets: [], focusLayout: null,
-    deleteTarget: null, deletingProjectId: null,
+    deleteTarget: null, deletingProjectId: null, autoSplitJob: null,
   };
   const formats = {
     wav: { label: '位深', description: '无损 PCM，适合后期制作与音频存档。', options: [['16', '16 bit · 标准'], ['24', '24 bit · 高精度'], ['32', '32 bit float · 浮点']], default: '16' },
@@ -566,6 +566,7 @@
   function syncPlayback() {
     const playing = !!state.wave?.isPlaying();
     ui.play.classList.toggle('is-playing', playing);
+    $('author-cat').classList.toggle('is-listening', playing);
     ui.play.setAttribute('aria-label', playing ? '暂停' : '播放');
     ui.play.querySelector('use').setAttribute('href', playing ? '#i-pause' : '#i-play');
   }
@@ -738,6 +739,44 @@
     state.regions.addRegion({ start, end: Math.min(duration, start + 5), minLength: Math.min(.01, duration), color: 'rgba(255,152,72,0.24)' });
   }
 
+  async function autoSplit() {
+    if (!state.ready || state.loading || state.projectBusy || state.exportJob || state.autoSplitJob) return;
+    const { buffer, loadId } = state;
+    const before = snapshot();
+    const job = { loadId };
+    const isCurrent = () => state.loadId === loadId && !state.projectBusy;
+    state.autoSplitJob = job;
+    updateControls();
+    try {
+      await nextFrame();
+      if (!isCurrent()) return;
+      const ranges = await window.AudioCutterAutoSplit(buffer, isCurrent);
+      if (!ranges || !isCurrent()) return;
+      if (snapshot() !== before) return toast('分析期间片段有修改，已保留当前编辑。');
+      if (!ranges.length) return toast('没有找到清晰的静音或起音切点。');
+      stopPreview();
+      state.restoring = true;
+      let first;
+      try {
+        state.regions.clearRegions();
+        state.metadata.clear();
+        for (const range of ranges) {
+          const region = state.regions.addRegion({ ...range, minLength: .01, color: 'rgba(255,152,72,0.12)' });
+          first ??= region.id;
+        }
+      } finally { state.restoring = false; }
+      selectRegion(first);
+      commitHistory();
+      renderClips();
+      toast(`已自动生成 ${ranges.length} 个片段，可整批撤销。`);
+    } catch (error) {
+      if (isCurrent()) toast(`自动切分失败：${error.message}`, true);
+    } finally {
+      if (state.autoSplitJob === job) state.autoSplitJob = null;
+      updateControls();
+    }
+  }
+
   function deleteRegion(id) {
     if (!state.ready || state.loading) return;
     const region = getRegion(id);
@@ -778,7 +817,7 @@
     $('export-size').textContent = state.buffer && clips.length ? `${format !== 'wav' ? '约 ' : ''}${formatBytes(bytes)}` : '—';
     $('export-button-label').textContent = state.exportJob ? '正在导出…' : clips.length > 1 ? `导出 ${clips.length} 个片段 · ZIP` : `导出 ${format.toUpperCase()} 音频`;
     $('export-footnote').textContent = clips.length > 1 ? '多个片段自动打包为一个 ZIP 文件。' : '音频在本地编码，无需等待上传。';
-    ui.export.disabled = !state.ready || state.loading || state.projectBusy || !!state.exportJob || clips.length === 0;
+    ui.export.disabled = !state.ready || state.loading || state.projectBusy || !!state.exportJob || !!state.autoSplitJob || clips.length === 0;
   }
 
   function scheduleSummary() {
@@ -798,6 +837,8 @@
     const enabled = state.ready && !state.loading && !state.projectBusy;
     document.documentElement.dataset.projectBusy = String(state.loading || state.projectBusy);
     for (const id of ['btn-play-pause', 'btn-rewind', 'btn-loop', 'btn-add-clip', 'btn-fit', 'btn-zoom-in', 'btn-zoom-out', 'zoom-slider']) $(id).disabled = !enabled;
+    $('btn-auto-split').disabled = !enabled || !!state.exportJob || !!state.autoSplitJob;
+    $('auto-split-label').textContent = state.autoSplitJob ? '分析中…' : '一键切分';
     ui.undo.disabled = !enabled || state.historyIndex <= 0;
     ui.redo.disabled = !enabled || state.historyIndex >= state.history.length - 1;
     $('btn-clear-clips').disabled = !enabled || getRegions().length === 0;
@@ -992,7 +1033,7 @@
   }
 
   async function exportAudio() {
-    if (!state.ready || state.loading || state.exportJob) return;
+    if (!state.ready || state.loading || state.exportJob || state.autoSplitJob) return;
     const clips = getExportClips();
     if (!clips.length) return toast('请先勾选需要导出的片段。');
     const buffer = state.buffer;
@@ -1099,6 +1140,7 @@
   function syncLayoutChrome() {
     const left = document.documentElement.dataset.sidebar === 'collapsed';
     const right = document.documentElement.dataset.exportSidebar === 'collapsed';
+    document.documentElement.dataset.focusActive = String(!!state.focusLayout && left && right);
     $('focus-mode').setAttribute('aria-pressed', String(left && right));
     $('focus-mode').setAttribute('aria-label', left && right ? '退出专注模式，恢复侧栏' : '专注模式，收起两侧栏');
     $('panel-scrim').hidden = !window.matchMedia('(max-width: 900px)').matches || (left && right);
@@ -1135,6 +1177,58 @@
     loadFile(new File([bytes], '示例_八个音符.wav', { type: 'audio/wav' }));
   }
 
+  function setupAuthorCat() {
+    const cat = $('author-cat');
+    const key = 'vvcat-cutter-cat-position';
+    let drag = null;
+    let moved = false;
+    function position(left, top) {
+      const maxLeft = Math.max(4, window.innerWidth - cat.offsetWidth - 4);
+      const minTop = $('editor').querySelector('.topbar').offsetHeight + 30;
+      const maxTop = $('editor').querySelector('.page-footer').getBoundingClientRect().top - cat.offsetHeight - 4;
+      cat.style.left = `${clamp(left, 4, maxLeft)}px`;
+      cat.style.top = `${clamp(top, minTop, Math.max(minTop, maxTop))}px`;
+      cat.style.right = cat.style.bottom = 'auto';
+    }
+    try {
+      const saved = JSON.parse(localStorage.getItem(key));
+      if (saved && Number.isFinite(saved.left) && Number.isFinite(saved.top)) position(saved.left, saved.top);
+    } catch (_) { /* Optional preference. */ }
+    cat.addEventListener('pointerdown', (event) => {
+      if (!event.isPrimary || event.button !== 0 || event.target.closest('.cat-hint')) return;
+      const rect = cat.getBoundingClientRect();
+      moved = false;
+      drag = { id: event.pointerId, x: event.clientX, y: event.clientY, left: rect.left, top: rect.top };
+      cat.setPointerCapture(event.pointerId);
+    });
+    cat.addEventListener('pointermove', (event) => {
+      if (drag?.id !== event.pointerId) return;
+      const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
+      if (!moved && Math.hypot(dx, dy) < 6) return;
+      moved = true;
+      cat.classList.add('is-dragging');
+      position(drag.left + dx, drag.top + dy);
+    });
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) cat.addEventListener(type, (event) => {
+      if (drag?.id !== event.pointerId) return;
+      drag = null;
+      cat.classList.remove('is-dragging');
+      if (!moved) return;
+      const { left, top } = cat.getBoundingClientRect();
+      try { localStorage.setItem(key, JSON.stringify({ left, top })); } catch (_) { /* Optional preference. */ }
+    });
+    cat.addEventListener('click', (event) => {
+      if (moved && event.detail && !event.target.closest('.cat-hint')) event.preventDefault();
+      moved = false;
+    });
+    cat.addEventListener('dragstart', (event) => event.preventDefault());
+    window.addEventListener('resize', () => {
+      if (!cat.style.left || !cat.offsetWidth) return;
+      const { left, top } = cat.getBoundingClientRect();
+      position(left, top);
+    });
+  }
+
   function setupEvents() {
     for (const id of ['project-new', 'header-new']) $(id).addEventListener('click', showNewProject);
     $('new-project-form').addEventListener('submit', createProject);
@@ -1161,6 +1255,15 @@
     ui.undo.addEventListener('click', () => restoreHistory(-1));
     ui.redo.addEventListener('click', () => restoreHistory(1));
     $('btn-add-clip').addEventListener('click', addClip);
+    $('btn-auto-split').addEventListener('click', () => {
+      if (getRegions().length) $('auto-split-dialog').showModal();
+      else autoSplit();
+    });
+    $('auto-split-form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      $('auto-split-dialog').close();
+      autoSplit();
+    });
     $('btn-clear-clips').addEventListener('click', () => { stopPreview(); state.regions?.clearRegions(); state.metadata.clear(); selectRegion(null); commitHistory(); renderClips(); });
     ui.checkAll.addEventListener('change', () => { for (const meta of state.metadata.values()) meta.checked = ui.checkAll.checked; commitHistory(); renderClips(); });
     $('btn-loop').addEventListener('click', () => { state.loop = !state.loop; $('btn-loop').setAttribute('aria-pressed', String(state.loop)); if (!state.loop) state.previewId = null; scheduleProjectSave(); toast(state.loop ? '循环试听已开启，点击片段播放键开始。' : '循环试听已关闭。'); });
@@ -1252,6 +1355,7 @@
   applyExportSidebar(savedExportSidebar ? savedExportSidebar === 'collapsed' : narrow);
   setupEvents();
   setupOverview();
+  setupAuthorCat();
   updateControls();
   initializeProjects();
 })();
