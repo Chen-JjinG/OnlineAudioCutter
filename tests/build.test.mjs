@@ -26,6 +26,9 @@ test('standalone embeds intact worker, WASM and application without external run
   assert.ok(!/<script[^>]*\bsrc=/.test(html));
   assert.ok(!/<link[^>]*\brel="stylesheet"/.test(html));
   assert.ok(!/src="assets\//.test(html), 'both cat assets are embedded for offline use');
+  const catSprites = html.match(/data-sprite="data:image\/webp;base64,([^"]+)"/);
+  assert.ok(catSprites, 'the cat sprites are embedded for offline use');
+  assert.deepEqual(Buffer.from(catSprites[1], 'base64'), readFileSync(path.join(root, 'assets/vvcat-motions.webp')));
   assert.ok(!html.includes('count.getloli.com'), 'the offline build never requests the site visitor counter');
   assert.ok(html.includes('property="og:image" content="https://onlineaudiocutter.pages.dev/assets/vvcat-logo.png"'));
   assert.ok(html.includes('AudioCutterAutoSplit'));
