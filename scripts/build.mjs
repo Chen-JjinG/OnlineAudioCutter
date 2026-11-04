@@ -10,6 +10,9 @@ for (const directory of ['css', 'js', 'vendor', 'assets']) {
   await rm(path.join(output, directory), { recursive: true, force: true });
   await cp(path.join(root, directory), path.join(output, directory), { recursive: true });
 }
+for (const filename of ['robots.txt', 'sitemap.xml', 'indexnow-key.txt']) {
+  await cp(path.join(root, filename), path.join(output, filename));
+}
 const source = await readFile(path.join(root, 'index.html'), 'utf8');
 await writeFile(path.join(output, 'index.html'), source);
 const safeScript = (source) => source.replace(/<\/script/gi, '<\\/script');

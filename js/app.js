@@ -1185,54 +1185,117 @@
 
   function setupAuthorCat() {
     const cat = $('author-cat');
+    const panel = $('cat-panel');
+    const figure = $('cat-figure');
+    const dockButton = $('cat-dock');
+    const edgeTab = $('cat-undock');
+    const topbar = document.querySelector('.topbar');
+    const footer = document.querySelector('.page-footer');
     const key = 'vvcat-cutter-cat-position';
     let drag = null;
     let moved = false;
+
     function position(left, top) {
       const maxLeft = Math.max(4, window.innerWidth - cat.offsetWidth - 4);
-      const minTop = $('editor').querySelector('.topbar').offsetHeight + 30;
-      const maxTop = $('editor').querySelector('.page-footer').getBoundingClientRect().top - cat.offsetHeight - 4;
+      const minTop = topbar.offsetHeight + 6;
+      const maxTop = window.innerHeight - footer.offsetHeight - cat.offsetHeight - 4;
       cat.style.left = `${clamp(left, 4, maxLeft)}px`;
       cat.style.top = `${clamp(top, minTop, Math.max(minTop, maxTop))}px`;
       cat.style.right = cat.style.bottom = 'auto';
     }
+
+    function positionEdgeTab() {
+      const edge = cat.dataset.dock;
+      if (!edge) {
+        cat.style.removeProperty('--cat-dock-offset');
+        return;
+      }
+      const edgeLeft = edge === 'left' ? 0 : window.innerWidth - cat.offsetWidth;
+      cat.style.setProperty('--cat-dock-offset', `${edgeLeft - parseFloat(cat.style.left)}px`);
+    }
+
+    function setDock(edge, moveFocus = false) {
+      if (edge) {
+        if (!cat.style.left) {
+          const { left, top } = cat.getBoundingClientRect();
+          position(left, top);
+        }
+        cat.dataset.dock = cat.dataset.edge = edge;
+      } else {
+        delete cat.dataset.dock;
+      }
+      positionEdgeTab();
+      panel.inert = Boolean(edge);
+      edgeTab.inert = !edge;
+      if (moveFocus) (edge ? edgeTab : dockButton).focus({ preventScroll: true });
+    }
+
+    function savePosition() {
+      const left = parseFloat(cat.style.left), top = parseFloat(cat.style.top);
+      try { localStorage.setItem(key, JSON.stringify({ left, top, edge: cat.dataset.dock })); } catch (_) { /* Optional preference. */ }
+    }
+
+    edgeTab.inert = true;
     try {
       const saved = JSON.parse(localStorage.getItem(key));
-      if (saved && Number.isFinite(saved.left) && Number.isFinite(saved.top)) position(saved.left, saved.top);
+      if (saved && Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
+        position(saved.left, saved.top);
+        if (saved.edge === 'left' || saved.edge === 'right') setDock(saved.edge);
+      }
     } catch (_) { /* Optional preference. */ }
-    cat.addEventListener('pointerdown', (event) => {
-      if (!event.isPrimary || event.button !== 0 || event.target.closest('.cat-hint')) return;
+
+    dockButton.addEventListener('click', () => {
+      const rect = cat.getBoundingClientRect();
+      setDock(rect.left + rect.width / 2 < window.innerWidth / 2 ? 'left' : 'right', true);
+      savePosition();
+    });
+    edgeTab.addEventListener('click', () => {
+      setDock(null, true);
+      savePosition();
+    });
+
+    figure.addEventListener('pointerdown', (event) => {
+      if (!event.isPrimary || event.button !== 0) return;
       const rect = cat.getBoundingClientRect();
       moved = false;
-      drag = { id: event.pointerId, x: event.clientX, y: event.clientY, left: rect.left, top: rect.top };
-      cat.setPointerCapture(event.pointerId);
+      drag = { id: event.pointerId, x: event.clientX, y: event.clientY, previousX: event.clientX, left: rect.left, top: rect.top };
+      figure.setPointerCapture(event.pointerId);
     });
-    cat.addEventListener('pointermove', (event) => {
+    figure.addEventListener('pointermove', (event) => {
       if (drag?.id !== event.pointerId) return;
       const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
       if (!moved && Math.hypot(dx, dy) < 6) return;
       moved = true;
       cat.classList.add('is-dragging');
+      const tilt = clamp((drag.previousX - event.clientX) * .55, -12, 12);
+      cat.style.setProperty('--cat-tilt', `${tilt}deg`);
+      drag.previousX = event.clientX;
       position(drag.left + dx, drag.top + dy);
     });
-    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) cat.addEventListener(type, (event) => {
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) figure.addEventListener(type, (event) => {
       if (drag?.id !== event.pointerId) return;
       drag = null;
       cat.classList.remove('is-dragging');
       if (!moved) return;
-      const { left, top } = cat.getBoundingClientRect();
-      try { localStorage.setItem(key, JSON.stringify({ left, top })); } catch (_) { /* Optional preference. */ }
+      if (event.type === 'pointerup') {
+        if (event.clientX <= 42) setDock('left', panel.contains(document.activeElement));
+        else if (event.clientX >= window.innerWidth - 42) setDock('right', panel.contains(document.activeElement));
+      }
+      savePosition();
     });
-    cat.addEventListener('click', (event) => {
-      if (moved && event.detail && !event.target.closest('.cat-hint')) event.preventDefault();
+    figure.addEventListener('click', (event) => {
+      if (moved && event.detail) event.preventDefault();
       moved = false;
     });
-    cat.addEventListener('dragstart', (event) => event.preventDefault());
-    window.addEventListener('resize', () => {
+    figure.addEventListener('dragstart', (event) => event.preventDefault());
+
+    function fitToViewport() {
       if (!cat.style.left || !cat.offsetWidth) return;
-      const { left, top } = cat.getBoundingClientRect();
-      position(left, top);
-    });
+      position(parseFloat(cat.style.left), parseFloat(cat.style.top));
+      positionEdgeTab();
+    }
+    window.addEventListener('resize', fitToViewport);
+    new ResizeObserver(fitToViewport).observe(cat);
   }
 
   function setupEvents() {

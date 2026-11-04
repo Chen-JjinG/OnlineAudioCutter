@@ -95,6 +95,11 @@
         <div class="export-divider"></div><div class="export-summary"><span>导出范围</span><strong id="export-scope">整段音频</strong><span>总时长</span><strong id="export-duration">—</strong><span>预计大小</span><strong id="export-size">—</strong></div><div class="export-progress" id="export-progress" hidden><div><span id="export-status">正在准备…</span><strong id="export-percent">0%</strong></div><progress id="export-progress-bar" max="1" value="0" aria-label="导出进度"></progress><button class="text-button" id="btn-cancel-export">取消导出</button></div><button class="button primary export-button" id="btn-export" disabled><svg class="icon"><use href="#i-download"/></svg><span id="export-button-label">导出音频</span></button><p class="export-footnote" id="export-footnote">音频在本地编码，无需等待上传。</p><div class="export-result" id="export-result" hidden></div>
       </aside>
     </div>
+    <section class="quick-guide" aria-labelledby="quick-guide-title">
+      <h2 id="quick-guide-title">怎么按静音批量切分音频？</h2>
+      <p>导入一段连续录音，点击「一键切分」。工具会按静音间隔和明显起音标出片段。逐段试听、微调边界后，可以将选中的片段批量导出为 WAV、MP3 或 OGG。</p>
+      <p>例如，把一条录了多次挥砍、碰撞或脚步的游戏音效拆成独立素材。音频在浏览器本地处理。</p>
+    </section>
     <footer class="page-footer">
       <span id="session-status">LOCAL PROJECT / 本地项目</span>
       <div class="visitor-counter">
@@ -106,16 +111,24 @@
     </footer>
   </div>
 </main>
-<a class="author-cat" id="author-cat" href="https://vvcat-radio.pages.dev/" target="_blank" rel="noopener" aria-label="了解作者，在新标签页打开猫队长的收音机">
-  <span class="cat-hint">了解作者 <span aria-hidden="true">↗</span></span>
-  <span class="cat-figure" aria-hidden="true">
-    <svg class="cat-tail" viewBox="0 0 160 120">
-      <path d="M 10 86 C 26 102, 56 110, 86 100 C 118 88, 142 62, 134 36 C 128 16, 104 10, 90 26" fill="none" stroke="#241e19" stroke-width="16" stroke-linecap="round" />
-      <circle cx="90" cy="26" r="8" fill="#e2795a" />
-    </svg>
-    <img src="assets/vvcat-companion.png" alt="" width="2048" height="2048" draggable="false">
-  </span>
-</a>
+<aside class="author-cat" id="author-cat" aria-label="猫队长挂件">
+  <div class="cat-panel" id="cat-panel">
+    <div class="cat-controls">
+      <a class="cat-hint" href="https://vvcat-radio.pages.dev/" target="_blank" rel="noopener">了解作者 <span aria-hidden="true">↗</span></a>
+      <button class="cat-dock-button" id="cat-dock" type="button" aria-label="将小猫收至屏幕边缘" title="收起小猫，也可拖到屏幕边缘"><svg class="icon" aria-hidden="true"><use href="#i-sidebar"/></svg></button>
+    </div>
+    <a class="cat-figure" id="cat-figure" href="https://vvcat-radio.pages.dev/" target="_blank" rel="noopener" tabindex="-1" aria-label="打开猫队长的收音机" draggable="false">
+      <span class="cat-art" aria-hidden="true">
+        <svg class="cat-tail" viewBox="0 0 160 120">
+          <path d="M 10 86 C 26 102, 56 110, 86 100 C 118 88, 142 62, 134 36 C 128 16, 104 10, 90 26" fill="none" stroke="#241e19" stroke-width="16" stroke-linecap="round" />
+          <circle cx="90" cy="26" r="8" fill="#e2795a" />
+        </svg>
+        <img src="assets/vvcat-companion.png" alt="" width="2048" height="2048" draggable="false">
+      </span>
+    </a>
+  </div>
+  <button class="cat-edge-tab" id="cat-undock" type="button" aria-label="展开小猫" aria-controls="cat-panel" aria-expanded="false" title="展开小猫"><img src="assets/vvcat-logo.png" alt="" width="20" height="20"><span aria-hidden="true">‹</span></button>
+</aside>
 <button class="panel-scrim" id="panel-scrim" aria-label="关闭侧栏" hidden></button>
 <div id="drag-overlay" class="drag-overlay" hidden><div><svg class="icon"><use href="#i-upload"/></svg><h2>松开，导入这段声音</h2><p>一次编辑一份音频</p></div></div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>

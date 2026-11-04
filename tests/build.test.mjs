@@ -32,4 +32,7 @@ test('standalone embeds intact worker, WASM and application without external run
   assert.ok(html.includes('AudioCutterProjectCore') && html.includes('AudioCutterProjectStore'));
   const application = readFileSync(path.join(root, 'js/app.js'), 'utf8');
   assert.ok(html.includes(application));
+  for (const filename of ['robots.txt', 'sitemap.xml', 'indexnow-key.txt']) {
+    assert.equal(readFileSync(path.join(root, 'dist', filename), 'utf8'), readFileSync(path.join(root, filename), 'utf8'));
+  }
 });
