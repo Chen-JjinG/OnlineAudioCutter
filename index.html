@@ -16,12 +16,14 @@
   <meta property="og:image:alt" content="猫队长标志">
   <link rel="icon" type="image/png" href="assets/vvcat-logo.png">
   <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/cat-companion.css">
   <script defer src="vendor/wavesurfer.min.js"></script>
   <script defer src="vendor/regions.min.js"></script>
   <script defer src="vendor/minimap.min.js"></script>
   <script defer src="js/project-core.js"></script>
   <script defer src="js/project-store.js"></script>
   <script defer src="js/auto-split.js"></script>
+  <script defer src="js/cat-companion.js"></script>
   <script defer src="js/app.js"></script>
 </head>
 <body>
@@ -111,23 +113,19 @@
     </footer>
   </div>
 </main>
-<aside class="author-cat" id="author-cat" aria-label="猫队长挂件">
-  <div class="cat-panel" id="cat-panel">
-    <div class="cat-controls">
-      <a class="cat-hint" href="https://vvcat-radio.pages.dev/" target="_blank" rel="noopener">了解作者 <span aria-hidden="true">↗</span></a>
-      <button class="cat-dock-button" id="cat-dock" type="button" aria-label="将小猫收至屏幕边缘" title="收起小猫，也可拖到屏幕边缘"><svg class="icon" aria-hidden="true"><use href="#i-sidebar"/></svg></button>
+<aside class="vvcat author-cat" id="author-cat" aria-label="猫队长挂件">
+  <div class="vvcat-panel" id="cat-panel">
+    <div class="vvcat-controls">
+      <a class="vvcat-hint" href="https://vvcat-radio.pages.dev/" target="_blank" rel="noopener">了解作者 <span aria-hidden="true">↗</span></a>
+      <button class="vvcat-dock" id="cat-dock" type="button" aria-label="将小猫收至屏幕边缘" title="收起小猫，也可拖到屏幕边缘"><svg class="icon" aria-hidden="true"><use href="#i-sidebar"/></svg></button>
     </div>
-    <a class="cat-figure" id="cat-figure" href="https://vvcat-radio.pages.dev/" target="_blank" rel="noopener" tabindex="-1" aria-label="打开猫队长的收音机" draggable="false">
-      <span class="cat-art" aria-hidden="true">
-        <svg class="cat-tail" viewBox="0 0 160 120">
-          <path d="M 10 86 C 26 102, 56 110, 86 100 C 118 88, 142 62, 134 36 C 128 16, 104 10, 90 26" fill="none" stroke="#241e19" stroke-width="16" stroke-linecap="round" />
-          <circle cx="90" cy="26" r="8" fill="#e2795a" />
-        </svg>
-        <img src="assets/vvcat-companion.png" alt="" width="2048" height="2048" draggable="false">
-      </span>
+    <a class="vvcat-figure" id="cat-figure" href="https://vvcat-radio.pages.dev/" target="_blank" rel="noopener" tabindex="-1" aria-label="打开猫队长的收音机" draggable="false">
+      <img class="vvcat-fallback" src="assets/vvcat-companion.png" alt="" width="2048" height="2048" draggable="false">
+      <canvas class="vvcat-sprite" data-sprite="assets/vvcat-motions.webp" width="240" height="240" aria-hidden="true"></canvas>
+      <span class="vvcat-grab" aria-hidden="true"></span>
     </a>
   </div>
-  <button class="cat-edge-tab" id="cat-undock" type="button" aria-label="展开小猫" aria-controls="cat-panel" aria-expanded="false" title="展开小猫"><img src="assets/vvcat-logo.png" alt="" width="20" height="20"><span aria-hidden="true">‹</span></button>
+  <button class="vvcat-tab" id="cat-undock" type="button" aria-label="展开小猫" aria-controls="cat-panel" aria-expanded="false" title="展开小猫"><img src="assets/vvcat-logo.png" alt="" width="20" height="20"><span aria-hidden="true">‹</span></button>
 </aside>
 <button class="panel-scrim" id="panel-scrim" aria-label="关闭侧栏" hidden></button>
 <div id="drag-overlay" class="drag-overlay" hidden><div><svg class="icon"><use href="#i-upload"/></svg><h2>松开，导入这段声音</h2><p>一次编辑一份音频</p></div></div>

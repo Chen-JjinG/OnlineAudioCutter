@@ -16,18 +16,21 @@ for (const filename of ['robots.txt', 'sitemap.xml', 'indexnow-key.txt']) {
 const source = await readFile(path.join(root, 'index.html'), 'utf8');
 await writeFile(path.join(output, 'index.html'), source);
 const safeScript = (source) => source.replace(/<\/script/gi, '<\\/script');
-const stylesheet = await readFile(path.join(root, 'css/styles.css'), 'utf8');
-let standalone = source.replace('<link rel="stylesheet" href="css/styles.css">', () => `<style>\n${stylesheet}\n</style>`);
+let standalone = source;
+for (const filename of ['styles.css', 'cat-companion.css']) {
+  const stylesheet = await readFile(path.join(root, 'css', filename), 'utf8');
+  standalone = standalone.replace(`<link rel="stylesheet" href="css/${filename}">`, () => `<style>\n${stylesheet}\n</style>`);
+}
 standalone = standalone.replace(/^ +<div class="visitor-counter">[\s\S]*?<\/div>\n/m, '');
 for (const filename of ['wavesurfer.min.js', 'regions.min.js', 'minimap.min.js']) {
   const library = safeScript(await readFile(path.join(root, 'vendor', filename), 'utf8'));
   standalone = standalone.replace(`<script defer src="vendor/${filename}"></script>`, () => `<script>\n${library}\n</script>`);
 }
-const scripts = ['project-core.js', 'project-store.js', 'auto-split.js', 'app.js'];
+const scripts = ['project-core.js', 'project-store.js', 'auto-split.js', 'cat-companion.js', 'app.js'];
 for (const filename of scripts) standalone = standalone.replace(`<script defer src="js/${filename}"></script>`, '');
-for (const filename of ['vvcat-logo.png', 'vvcat-companion.png']) {
+for (const filename of ['vvcat-logo.png', 'vvcat-companion.png', 'vvcat-motions.webp']) {
   const asset = `assets/${filename}`;
-  const data = `data:image/png;base64,${(await readFile(path.join(root, asset))).toString('base64')}`;
+  const data = `data:image/${path.extname(filename).slice(1)};base64,${(await readFile(path.join(root, asset))).toString('base64')}`;
   standalone = standalone.replaceAll(`"${asset}"`, `"${data}"`);
 }
 const wasm = {};
