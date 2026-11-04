@@ -26,6 +26,7 @@ test('standalone embeds intact worker, WASM and application without external run
   assert.ok(!/<script[^>]*\bsrc=/.test(html));
   assert.ok(!/<link[^>]*\brel="stylesheet"/.test(html));
   assert.ok(!/src="assets\//.test(html), 'both cat assets are embedded for offline use');
+  assert.ok(!html.includes('count.getloli.com'), 'the offline build never requests the site visitor counter');
   assert.ok(html.includes('property="og:image" content="https://onlineaudiocutter.pages.dev/assets/vvcat-logo.png"'));
   assert.ok(html.includes('AudioCutterAutoSplit'));
   assert.ok(html.includes('AudioCutterProjectCore') && html.includes('AudioCutterProjectStore'));

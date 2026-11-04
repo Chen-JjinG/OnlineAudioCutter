@@ -15,6 +15,7 @@ await writeFile(path.join(output, 'index.html'), source);
 const safeScript = (source) => source.replace(/<\/script/gi, '<\\/script');
 const stylesheet = await readFile(path.join(root, 'css/styles.css'), 'utf8');
 let standalone = source.replace('<link rel="stylesheet" href="css/styles.css">', () => `<style>\n${stylesheet}\n</style>`);
+standalone = standalone.replace(/^ +<div class="visitor-counter">[\s\S]*?<\/div>\n/m, '');
 for (const filename of ['wavesurfer.min.js', 'regions.min.js', 'minimap.min.js']) {
   const library = safeScript(await readFile(path.join(root, 'vendor', filename), 'utf8'));
   standalone = standalone.replace(`<script defer src="vendor/${filename}"></script>`, () => `<script>\n${library}\n</script>`);

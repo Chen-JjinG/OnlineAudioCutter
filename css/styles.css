@@ -18,6 +18,10 @@ dialog{width:calc(100% - 30px);max-width:520px;max-height:calc(100vh - 40px);ove
 
 .history-actions{align-items:center}
 .workspace-intro{margin:-6px 0 14px;color:var(--secondary);font-size:12px}
+#session-status{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.visitor-counter{display:flex;align-items:center;gap:7px;margin-left:auto;white-space:nowrap;font-family:ui-monospace,monospace}
+.visitor-counter img{display:block;object-fit:contain}
+.footer-version{white-space:nowrap}
 #btn-auto-split{margin-right:5px}
 .author-cat{
   position:fixed;right:8px;bottom:calc(var(--footer) + 4px);z-index:34;
@@ -51,6 +55,8 @@ dialog{width:calc(100% - 30px);max-width:520px;max-height:calc(100vh - 40px);ove
 }
 @media(max-width:560px){
   .workspace-intro{margin-top:-3px;font-size:11px}
+  .visitor-counter img{width:83px;height:18px}
+  .visitor-counter + .footer-version{display:none}
   #btn-auto-split{gap:4px;padding-inline:6px;font-size:10px}
   #btn-auto-split .icon{width:12px;height:12px}
 }
