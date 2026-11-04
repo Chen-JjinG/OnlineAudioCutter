@@ -1,8 +1,10 @@
-# VVcat Audio Cutter 2.1
+# 猫队的音频切分器 · VVcat Audio Cutter
 
 一个在浏览器本地运行的音频剪辑工具。保留原项目的波形框选、多片段编辑、缩放和总览，同时加入真实 MP3 / Ogg Vorbis 编码及 Ableton Live 风格的深灰橙色工作区，使用猫队长音乐站的猫图标。
 
 ## 使用
+
+[在线切分音频](https://onlineaudiocutter.pages.dev/#editor)
 
 ### 直接打开单文件版
 

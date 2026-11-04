@@ -17,6 +17,7 @@ dialog{width:calc(100% - 30px);max-width:520px;max-height:calc(100vh - 40px);ove
 :root[data-project-busy=true] .editing-column{pointer-events:none;opacity:.6}
 
 .history-actions{align-items:center}
+.workspace-intro{margin:-6px 0 14px;color:var(--secondary);font-size:12px}
 #btn-auto-split{margin-right:5px}
 .author-cat{
   position:fixed;right:8px;bottom:calc(var(--footer) + 4px);z-index:34;
@@ -49,6 +50,7 @@ dialog{width:calc(100% - 30px);max-width:520px;max-height:calc(100vh - 40px);ove
   :root[data-export-sidebar=expanded] .author-cat{right:calc(var(--right) + 8px)}
 }
 @media(max-width:560px){
+  .workspace-intro{margin-top:-3px;font-size:11px}
   #btn-auto-split{gap:4px;padding-inline:6px;font-size:10px}
   #btn-auto-split .icon{width:12px;height:12px}
 }

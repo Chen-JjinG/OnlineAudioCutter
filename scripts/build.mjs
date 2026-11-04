@@ -24,7 +24,7 @@ for (const filename of scripts) standalone = standalone.replace(`<script defer s
 for (const filename of ['vvcat-logo.png', 'vvcat-companion.png']) {
   const asset = `assets/${filename}`;
   const data = `data:image/png;base64,${(await readFile(path.join(root, asset))).toString('base64')}`;
-  standalone = standalone.replaceAll(asset, data);
+  standalone = standalone.replaceAll(`"${asset}"`, `"${data}"`);
 }
 const wasm = {};
 for (const format of ['mp3', 'ogg']) wasm[format] = `data:application/wasm;base64,${(await readFile(path.join(root, 'vendor', `${format}.wasm`))).toString('base64')}`;
